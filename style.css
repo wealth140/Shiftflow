@@ -151,6 +151,8 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
 .worker-login-form{ display: flex; flex-direction: column; gap: 16px; max-width: 360px; margin: 0 auto; text-align: left; }
 .worker-login-form label{ display: flex; flex-direction: column; gap: 6px; font-size: 0.82rem; color: var(--brand-text-dim); font-weight: 500; }
 .login-or-divider{ font-size: 0.72rem; color: var(--brand-text-dim); text-align: center; text-transform: uppercase; letter-spacing: 0.06em; margin: -6px 0; }
+.link-btn{ background: none; border: none; cursor: pointer; width: 100%; text-align: center; font-size: 0.82rem; color: var(--teal); padding: 4px; }
+.link-btn:hover{ text-decoration: underline; }
 .worker-login-form select, .worker-login-form input{
   border: 1px solid rgba(255,255,255,0.15);
   background: rgba(255,255,255,0.05);
@@ -436,7 +438,8 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .clock-status{ font-size: 0.86rem; color: var(--brand-text-dim); margin-bottom: 6px; }
 .clock-time{ font-family: var(--font-mono); font-size: 2rem; font-weight: 500; }
 
-.log-table{ width: 100%; border-collapse: collapse; }
+.table-scroll{ overflow-x: auto; }
+.log-table{ width: 100%; min-width: 520px; border-collapse: collapse; }
 .log-table th{ text-align: left; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--slate-2); font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .log-table td{ padding: 12px; font-size: 0.86rem; border-bottom: 1px solid var(--line); }
 .log-table tr:last-child td{ border-bottom: none; }

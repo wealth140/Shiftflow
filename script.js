@@ -1755,17 +1755,20 @@
 
   var roleGate = $("#roleGate");
   var workerLoginGate = $("#workerLoginGate");
+  var adminAuthGate = $("#adminAuthGate");
   var appEl = $("#app");
   var workerShell = $("#workerShell");
   var roleAdminBtn = $("#roleAdminBtn");
   var roleWorkerBtn = $("#roleWorkerBtn");
   var switchRoleBtn = $("#switchRoleBtn");
+  var adminSignOutBtn = $("#adminSignOutBtn");
 
   function showRoleGate() {
     accessMode = null;
     currentWorker = null;
     roleGate.hidden = false;
     workerLoginGate.hidden = true;
+    if (adminAuthGate) adminAuthGate.hidden = true;
     appEl.hidden = true;
     workerShell.hidden = true;
     updateToggleSurface();
@@ -1774,9 +1777,81 @@
     accessMode = "admin";
     roleGate.hidden = true;
     workerLoginGate.hidden = true;
+    if (adminAuthGate) adminAuthGate.hidden = true;
     appEl.hidden = false;
     workerShell.hidden = true;
+    if (adminSignOutBtn) adminSignOutBtn.hidden = !(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured());
     updateToggleSurface();
+  }
+
+  /* --- Admin sign-in (only active when Supabase auth is configured) --- */
+  var adminAuthMode = "signin"; // "signin" | "signup"
+  function renderAdminAuthMode() {
+    var isSignup = adminAuthMode === "signup";
+    $("#adminAuthTitle").textContent = isSignup ? "Create your admin account" : "Sign in";
+    $("#adminAuthSub").textContent = isSignup
+      ? "This becomes the account that manages your organization's schedule."
+      : "Use your admin account to manage this organization's schedule.";
+    $("#adminAuthSubmitBtn").textContent = isSignup ? "Create account" : "Sign in";
+    $("#adminAuthToggleBtn").textContent = isSignup ? "Already have an account? Sign in" : "No account yet? Create one";
+    $("#adminAuthMsg").textContent = "";
+  }
+  function enterAdminAuthGate() {
+    roleGate.hidden = true;
+    adminAuthMode = "signin";
+    renderAdminAuthMode();
+    $("#adminAuthEmail").value = "";
+    $("#adminAuthPassword").value = "";
+    adminAuthGate.hidden = false;
+    updateToggleSurface();
+    $("#adminAuthEmail").focus();
+  }
+  if (roleAdminBtn) {
+    roleAdminBtn.addEventListener("click", function () {
+      if (window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) {
+        enterAdminAuthGate();
+      } else {
+        enterAdmin();
+      }
+    });
+  }
+  var adminAuthToggleBtn = $("#adminAuthToggleBtn");
+  if (adminAuthToggleBtn) {
+    adminAuthToggleBtn.addEventListener("click", function () {
+      adminAuthMode = adminAuthMode === "signup" ? "signin" : "signup";
+      renderAdminAuthMode();
+    });
+  }
+  var adminAuthBackBtn = $("#adminAuthBackBtn");
+  if (adminAuthBackBtn) adminAuthBackBtn.addEventListener("click", showRoleGate);
+  function submitAdminAuth() {
+    var email = $("#adminAuthEmail").value.trim();
+    var password = $("#adminAuthPassword").value;
+    var msg = $("#adminAuthMsg");
+    if (!email || !password) { msg.textContent = "Enter an email and password."; return; }
+    if (password.length < 6) { msg.textContent = "Password needs to be at least 6 characters."; return; }
+    msg.textContent = "Working on it…";
+    var action = adminAuthMode === "signup" ? window.ShiftFlowAuth.signUp : window.ShiftFlowAuth.signInWithPassword;
+    action(email, password).then(function (result) {
+      if (result.error) { msg.textContent = result.error; return; }
+      if (result.needsConfirmation) { msg.textContent = "Account created — check your email to confirm it, then sign in."; adminAuthMode = "signin"; renderAdminAuthMode(); return; }
+      enterAdmin();
+      showToast(adminAuthMode === "signup" ? "Account created — welcome to ShiftFlow." : "Signed in.");
+    });
+  }
+  var adminAuthSubmitBtn = $("#adminAuthSubmitBtn");
+  if (adminAuthSubmitBtn) adminAuthSubmitBtn.addEventListener("click", submitAdminAuth);
+  var adminAuthForm = $("#adminAuthForm");
+  if (adminAuthForm) {
+    $all("input", adminAuthForm).forEach(function (input) {
+      input.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submitAdminAuth(); } });
+    });
+  }
+  if (adminSignOutBtn) {
+    adminSignOutBtn.addEventListener("click", function () {
+      closeSidebar();
+      window.ShiftFlowAuth.signOut().then(showRoleGate);
+    });
   }
   function enterWorkerLogin() {
     roleGate.hidden = true;
@@ -1800,7 +1875,6 @@
     renderWorkerAnnouncements();
   }
 
-  if (roleAdminBtn) roleAdminBtn.addEventListener("click", enterAdmin);
   if (roleWorkerBtn) roleWorkerBtn.addEventListener("click", enterWorkerLogin);
   if (switchRoleBtn) switchRoleBtn.addEventListener("click", function () { closeSidebar(); showRoleGate(); });
 
@@ -2064,6 +2138,13 @@
       if (state.orgType) {
         orgGate.classList.add("is-hidden");
         showRoleGate(); // org's already set up — ask whether this visit is admin or worker
+        // Already signed in from a previous visit? Skip straight to the
+        // dashboard instead of asking them to sign in again.
+        if (window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) {
+          window.ShiftFlowAuth.getSession().then(function (session) {
+            if (session) enterAdmin();
+          });
+        }
       }
     }).catch(function () { /* local state already rendered */ });
   });

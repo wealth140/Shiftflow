@@ -200,6 +200,41 @@ database:
 `server.js` + `data.json` are still there for local development — running
 `node server.js` on your own machine is unaffected by any of this.
 
+### Turning on admin sign-in
+
+By default, clicking "Admin" on the access screen goes straight into the
+dashboard — no password, same as it's always worked. That's fine while
+you're the only one who knows the URL, but once this is actually deployed
+and reachable, anyone who finds the link can click "Admin" too. To require
+a real account:
+
+1. In your Supabase project, go to **Authentication → Providers** and make
+   sure **Email** is enabled (it is by default). Optionally turn off
+   "Confirm email" under **Authentication → Settings** if you don't want
+   the confirmation-email step for a small trusted team.
+2. In `index.html`, uncomment and fill in the block already sitting there:
+   ```html
+   <script>
+     window.SHIFTFLOW_SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+     window.SHIFTFLOW_SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+   </script>
+   ```
+   The anon key is meant to be public — it identifies the project, it
+   doesn't grant access by itself. Commit this and redeploy. Clicking
+   "Admin" now shows a real sign-in/create-account screen. The first
+   person to sign up becomes an admin.
+3. Once you've created your account and confirmed it works, set
+   `REQUIRE_ADMIN_AUTH=true` in the Vercel project's environment variables
+   and redeploy. This is the switch that actually makes the backend check
+   for a signed-in admin on every admin action (adding/removing workers,
+   editing the schedule, posting announcements, resolving swaps) — before
+   this is set, those routes stay open the same way they always have, so
+   you can't lock yourself out mid-setup.
+
+Workers are unaffected either way — they still sign in with their name/
+email + PIN, not a Supabase account. That's intentionally lightweight (see
+below), while admin access can now be real.
+
 **Worth knowing before real people rely on this:** worker PINs are plain
 4-digit codes checked in the browser, not hashed or rate-limited — good
 enough to keep someone from wandering into the wrong view, not something

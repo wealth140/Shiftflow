@@ -17,6 +17,17 @@
    Optional, for real invite emails (same as server.js):
      RESEND_API_KEY, EMAIL_FROM
 
+   Optional, to actually enforce admin sign-in (see README "Turning on
+   admin sign-in"):
+     REQUIRE_ADMIN_AUTH=true — once set, every admin-only route (adding/
+     removing workers, editing the schedule, posting announcements, etc.)
+     requires a valid Supabase session token from a signed-in admin.
+     Defaults to off so a deployment that hasn't set up the frontend's
+     SHIFTFLOW_SUPABASE_URL/ANON_KEY yet doesn't lock itself out. Routes
+     workers themselves use (clocking in/out, requesting a swap, chat) are
+     never gated by this — workers authenticate with their PIN, not
+     Supabase, same as before.
+
    One-time setup: run the SQL in README.md ("Deploying for real") against
    your Supabase project before the first request.
    ================================================ */
@@ -25,9 +36,30 @@ const https = require("https");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const STATE_ROW_ID = "default";
+const REQUIRE_ADMIN_AUTH = process.env.REQUIRE_ADMIN_AUTH === "true";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const EMAIL_FROM = process.env.EMAIL_FROM || "ShiftFlow <onboarding@resend.dev>";
+
+function isAdminOnlyRoute(resource, method, parts) {
+  if (resource === "org" && method === "POST") return true;
+  if (resource === "schedule-config" && method === "POST") return true;
+  if (resource === "workers" && (method === "POST" || method === "DELETE")) return true;
+  if (resource === "duties" && method === "POST") return true;
+  if (resource === "church-assignments" && method === "POST") return true;
+  if (resource === "announcements" && method === "POST") return true;
+  if (resource === "swaps" && method === "POST" && parts.length === 3) return true; // resolving (approve/decline) — creating a request (parts.length===2) is worker-initiated
+  return false;
+}
+
+async function verifyAdmin(req) {
+  var header = req.headers.authorization || "";
+  var token = header.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data || !data.user) return null;
+  return data.user;
+}
 
 function sendInviteEmail(toEmail, subject, text) {
   if (!RESEND_API_KEY) return Promise.resolve({ sent: false, reason: "no-email-service" });
@@ -108,7 +140,7 @@ function readBody(req) {
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") { res.status(204).end(); return; }
 
   function sendJson(status, obj) { res.status(status).json(obj); }
@@ -117,6 +149,12 @@ module.exports = async function handler(req, res) {
     var rawParts = req.query.path || [];
     var parts = ["api"].concat(Array.isArray(rawParts) ? rawParts : [rawParts]); // mirrors server.js's parts[1]=="workers" etc.
     var resource = parts[1];
+
+    if (REQUIRE_ADMIN_AUTH && isAdminOnlyRoute(resource, req.method, parts)) {
+      var adminUser = await verifyAdmin(req);
+      if (!adminUser) return sendJson(401, { error: "Sign in as an admin to do that." });
+    }
+
     var data = await readData();
 
     if (resource === "state" && req.method === "GET") {

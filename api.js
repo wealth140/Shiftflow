@@ -48,15 +48,31 @@ window.ShiftFlowAPI = (function () {
     });
   }
 
+  // When admin auth is configured (see supabase-auth.js), attach the
+  // signed-in admin's token so the backend can tell an authenticated admin
+  // apart from an anonymous caller on admin-only routes. Harmless no-op
+  // when auth isn't configured for this deployment.
+  function withAuthHeader(options) {
+    if (!window.ShiftFlowAuth || !window.ShiftFlowAuth.isConfigured()) return Promise.resolve(options);
+    return window.ShiftFlowAuth.getAccessToken().then(function (token) {
+      if (!token) return options;
+      options.headers = options.headers || {};
+      options.headers.Authorization = "Bearer " + token;
+      return options;
+    });
+  }
+
   function request(path, options) {
     return checkBackend().then(function (ok) {
       if (!ok) return null;
-      return withTimeout(
-        fetch(BASE + path, options)
-          .then(function (res) { return res.ok ? res.json() : null; })
-          .catch(function () { return null; }),
-        TIMEOUT_MS
-      );
+      return withAuthHeader(options).then(function (opts) {
+        return withTimeout(
+          fetch(BASE + path, opts)
+            .then(function (res) { return res.ok ? res.json() : null; })
+            .catch(function () { return null; }),
+          TIMEOUT_MS
+        );
+      });
     });
   }
 

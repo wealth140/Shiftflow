@@ -30,6 +30,15 @@
      uncomment and set this to your backend's URL before api.js loads:
 <script>window.SHIFTFLOW_API_URL = "https://your-backend.example.com/api";</script>
 -->
+<!-- For a real deployment (Vercel + Supabase, see README "Deploying for
+     real"), set these two so admin sign-in is a real account instead of an
+     open "Admin" button. Without them the app runs exactly as before —
+     zero config needed for local dev:
+<script>
+  window.SHIFTFLOW_SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+  window.SHIFTFLOW_SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+</script>
+-->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -67,6 +76,32 @@
         <span class="gate-card-label">I'm a worker</span>
         <span class="gate-card-sub">View my shifts &amp; clock in</span>
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ADMIN SIGN-IN GATE ============
+     Only ever shown when this deployment has real Supabase auth configured
+     (see supabase-auth.js). Without that config, clicking "Admin" on the
+     gate above goes straight into the dashboard, same as always. -->
+<div class="gate" id="adminAuthGate" hidden>
+  <div class="gate-inner">
+    <p class="gate-eyebrow">Admin sign-in</p>
+    <h1 class="gate-title" id="adminAuthTitle">Sign in</h1>
+    <p class="gate-sub" id="adminAuthSub">Use your admin account to manage this organization's schedule.</p>
+    <div class="worker-login-form" id="adminAuthForm">
+      <label>Email
+        <input type="email" id="adminAuthEmail" placeholder="you@example.com" autocomplete="username">
+      </label>
+      <label>Password
+        <input type="password" id="adminAuthPassword" placeholder="At least 6 characters" autocomplete="current-password">
+      </label>
+      <p class="field-hint" id="adminAuthMsg"></p>
+      <div class="worker-login-actions">
+        <button type="button" class="btn btn-ghost" id="adminAuthBackBtn">Back</button>
+        <button type="button" class="btn btn-primary" id="adminAuthSubmitBtn">Sign in</button>
+      </div>
+      <button type="button" class="link-btn" id="adminAuthToggleBtn">No account yet? Create one</button>
     </div>
   </div>
 </div>
@@ -155,6 +190,7 @@
       </div>
       <button class="sidebar-switch" id="switchOrgBtn">Switch organization type</button>
       <button class="sidebar-switch" id="switchRoleBtn">Switch to worker view</button>
+      <button class="sidebar-switch" id="adminSignOutBtn" hidden>Sign out</button>
     </div>
   </aside>
 
@@ -288,10 +324,12 @@
         </div>
         <div class="panel">
           <div class="panel-head"><h2>Today's log</h2></div>
-          <table class="log-table">
-            <thead><tr><th>Name</th><th>Role</th><th>Clock in</th><th>Clock out</th><th>Status</th></tr></thead>
-            <tbody id="attendanceBody"></tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="log-table">
+              <thead><tr><th>Name</th><th>Role</th><th>Clock in</th><th>Clock out</th><th>Status</th></tr></thead>
+              <tbody id="attendanceBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -509,6 +547,11 @@
     </button>
   </form>
 </div>
+ <!-- Harmless to load even when Supabase isn't configured for this
+     deployment — supabase-auth.js only ever calls into it when
+     window.SHIFTFLOW_SUPABASE_URL/ANON_KEY are set. -->
+ <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+ <script src="supabase-auth.js"></script>
  <script src="api.js"></script>
   <script src="script.js"></script>
 </body>
