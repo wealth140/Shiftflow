@@ -1,0 +1,10 @@
+node_modules/
+
+# Local dev data — contains real worker names/PINs once you start using
+# the app. Never committed, so a fresh clone always starts empty and no
+# one's real schedule/PIN data ends up in git history.
+data.json
+
+.vercel
+.env
+.env.local
