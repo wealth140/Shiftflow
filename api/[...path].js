@@ -1,65 +1,51 @@
 /* ================================================
-   ShiftFlow — production API (Vercel + Supabase)
+   ShiftFlow — production API (Vercel + Supabase), multi-tenant
 
-   This is the "real deployment" twin of server.js. Same routes, same
-   behavior — but Vercel's filesystem is read-only/ephemeral, so instead
-   of writing to a local data.json file, this persists to a Supabase
-   (Postgres) table. Local development still uses server.js + data.json;
-   nothing about running `node server.js` on your own machine changes.
+   Every admin gets their own organization (their own team, schedule,
+   swaps, attendance, chat, announcements) — completely separate from
+   every other admin's. One admin account = one organization.
 
-   Requires two environment variables set on the Vercel project:
-     SUPABASE_URL          — your Supabase project URL
-     SUPABASE_SERVICE_KEY  — the project's service_role key (server-side
-                              only secret — never expose this to the
-                              browser; Vercel env vars aren't sent to the
-                              client unless you prefix them NEXT_PUBLIC_/
-                              VITE_, which we don't, so this is safe)
-   Optional, for real invite emails (same as server.js):
+   Two ways in:
+     - Admin: signs in with Supabase Auth (see supabase-auth.js). Every
+       admin-only route below requires a valid Bearer token and resolves
+       to that admin's own organization — there is no "open" mode here,
+       unlike the single-tenant server.js used for local dev.
+     - Worker: never has a Supabase account. Their invite link carries a
+       random, unguessable token (?invite=...) that resolves straight to
+       them — which organization, which worker — with no PIN and no
+       picking their name off a list. That token IS their credential, so
+       treat it like a password: it's what "Copy invite"/"Email invite"
+       on the Team tab hands out, and regenerating a worker's invite
+       (delete + re-add, for now) invalidates the old one.
+
+   Local dev (`node server.js` + data.json) is intentionally still
+   single-tenant and PIN-based — it's the zero-config quick-start path,
+   not meant to demo multi-tenancy. This file is the real, multi-org
+   deployment.
+
+   Requires on the Vercel project:
+     SUPABASE_URL, SUPABASE_SERVICE_KEY — service_role key, server-side
+       only secret, never sent to the browser.
+   Optional (real invite emails):
      RESEND_API_KEY, EMAIL_FROM
-
-   Optional, to actually enforce admin sign-in (see README "Turning on
-   admin sign-in"):
-     REQUIRE_ADMIN_AUTH=true — once set, every admin-only route (adding/
-     removing workers, editing the schedule, posting announcements, etc.)
-     requires a valid Supabase session token from a signed-in admin.
-     Defaults to off so a deployment that hasn't set up the frontend's
-     SHIFTFLOW_SUPABASE_URL/ANON_KEY yet doesn't lock itself out. Routes
-     workers themselves use (clocking in/out, requesting a swap, chat) are
-     never gated by this — workers authenticate with their PIN, not
-     Supabase, same as before.
 
    One-time setup: run the SQL in README.md ("Deploying for real") against
    your Supabase project before the first request.
    ================================================ */
 const { createClient } = require("@supabase/supabase-js");
 const https = require("https");
+const crypto = require("crypto");
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-const STATE_ROW_ID = "default";
-const REQUIRE_ADMIN_AUTH = process.env.REQUIRE_ADMIN_AUTH === "true";
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const EMAIL_FROM = process.env.EMAIL_FROM || "ShiftFlow <onboarding@resend.dev>";
 
-function isAdminOnlyRoute(resource, method, parts) {
-  if (resource === "org" && method === "POST") return true;
-  if (resource === "schedule-config" && method === "POST") return true;
-  if (resource === "workers" && (method === "POST" || method === "DELETE")) return true;
-  if (resource === "duties" && method === "POST") return true;
-  if (resource === "church-assignments" && method === "POST") return true;
-  if (resource === "announcements" && method === "POST") return true;
-  if (resource === "swaps" && method === "POST" && parts.length === 3) return true; // resolving (approve/decline) — creating a request (parts.length===2) is worker-initiated
-  return false;
-}
-
-async function verifyAdmin(req) {
-  var header = req.headers.authorization || "";
-  var token = header.replace(/^Bearer\s+/i, "").trim();
-  if (!token) return null;
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data || !data.user) return null;
-  return data.user;
-}
+var DEFAULT_ORG_DATA = {
+  orgType: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
+  attendance: [], chat: { general: [], schedule: [], announcements: [] }, announcements: [],
+  scheduleDays: null, jobTypes: null
+};
 
 function sendInviteEmail(toEmail, subject, text) {
   if (!RESEND_API_KEY) return Promise.resolve({ sent: false, reason: "no-email-service" });
@@ -98,27 +84,38 @@ function sendInviteEmail(toEmail, subject, text) {
   });
 }
 
-var DEFAULT_STATE = {
-  orgType: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
-  attendance: [], chat: { general: [], schedule: [], announcements: [] }, announcements: [],
-  scheduleDays: null, jobTypes: null
-};
+/* ---------- auth / org resolution ---------- */
 
-async function readData() {
-  const { data, error } = await supabase.from("app_state").select("data").eq("id", STATE_ROW_ID).maybeSingle();
-  if (error) {
-    console.error("Supabase read error:", error.message);
-    return JSON.parse(JSON.stringify(DEFAULT_STATE));
-  }
-  if (!data) {
-    await writeData(DEFAULT_STATE);
-    return JSON.parse(JSON.stringify(DEFAULT_STATE));
-  }
-  return data.data;
+async function getAdminUser(req) {
+  var header = req.headers.authorization || "";
+  var token = header.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data || !data.user) return null;
+  return data.user;
 }
 
-async function writeData(state) {
-  const { error } = await supabase.from("app_state").upsert({ id: STATE_ROW_ID, data: state, updated_at: new Date().toISOString() });
+// Every signed-in admin owns exactly one organization, created the moment
+// they pick an org type (POST /org). Before that, there's no row yet —
+// callers treat that as "this admin hasn't set up their org" rather than
+// an error.
+async function getOrgForAdmin(user) {
+  const { data, error } = await supabase.from("organizations").select("*").eq("owner_id", user.id).maybeSingle();
+  if (error) { console.error("Supabase read error:", error.message); return null; }
+  return data;
+}
+
+async function getOrgByInviteToken(token) {
+  if (!token) return null;
+  const { data: invite, error } = await supabase.from("worker_invite_tokens").select("org_id, worker_id").eq("token", token).maybeSingle();
+  if (error || !invite) return null;
+  const { data: org, error: orgErr } = await supabase.from("organizations").select("*").eq("id", invite.org_id).maybeSingle();
+  if (orgErr || !org) return null;
+  return { org: org, workerId: invite.worker_id };
+}
+
+async function saveOrg(orgId, orgData) {
+  const { error } = await supabase.from("organizations").update({ data: orgData, updated_at: new Date().toISOString() }).eq("id", orgId);
   if (error) console.error("Supabase write error:", error.message);
 }
 
@@ -137,6 +134,13 @@ function readBody(req) {
   });
 }
 
+// Never send worker PINs (legacy field, unused once a worker has an
+// invite token — kept only so local-dev-imported data doesn't break) to
+// anyone. Admin-only routes get the real team array straight from Postgres.
+function stripPins(team) {
+  return (team || []).map(function (w) { var copy = Object.assign({}, w); delete copy.pin; return copy; });
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
@@ -149,137 +153,178 @@ module.exports = async function handler(req, res) {
     var rawParts = req.query.path || [];
     var parts = ["api"].concat(Array.isArray(rawParts) ? rawParts : [rawParts]); // mirrors server.js's parts[1]=="workers" etc.
     var resource = parts[1];
+    var inviteToken = (req.query.invite || "").toString().trim();
 
-    if (REQUIRE_ADMIN_AUTH && isAdminOnlyRoute(resource, req.method, parts)) {
-      var adminUser = await verifyAdmin(req);
-      if (!adminUser) return sendJson(401, { error: "Sign in as an admin to do that." });
-    }
-
-    var data = await readData();
-
+    /* ---------- GET /state — the one route with two shapes ---------- */
     if (resource === "state" && req.method === "GET") {
-      return sendJson(200, data);
+      var adminUser = await getAdminUser(req);
+      if (adminUser) {
+        var org = await getOrgForAdmin(adminUser);
+        if (!org) return sendJson(200, Object.assign({}, DEFAULT_ORG_DATA, { hasOrg: false }));
+        return sendJson(200, Object.assign({}, org.data, { hasOrg: true }));
+      }
+      if (inviteToken) {
+        var resolved = await getOrgByInviteToken(inviteToken);
+        if (!resolved) return sendJson(404, { error: "That invite link isn't valid anymore — ask your admin to resend it." });
+        var worker = (resolved.org.data.team || []).find((w) => w.id === resolved.workerId);
+        if (!worker) return sendJson(404, { error: "That invite link isn't valid anymore — ask your admin to resend it." });
+        return sendJson(200, Object.assign({}, resolved.org.data, {
+          team: stripPins(resolved.org.data.team),
+          currentWorkerId: resolved.workerId
+        }));
+      }
+      return sendJson(401, { error: "Sign in, or use your invite link." });
     }
 
-    if (resource === "org" && req.method === "POST") {
-      var orgBody = await readBody(req);
-      data.orgType = orgBody.orgType;
-      data.scheduleDays = null;
-      data.jobTypes = null;
-      await writeData(data);
-      return sendJson(200, { orgType: data.orgType });
+    /* ---------- everything else needs an org, one way or another ---------- */
+    var asAdmin = await getAdminUser(req);
+    var orgId, data, isAdminCaller = false, callerWorkerId = null;
+
+    if (asAdmin) {
+      var adminOrg = await getOrgForAdmin(asAdmin);
+      if (resource === "org" && req.method === "POST") {
+        var orgBody = await readBody(req);
+        if (!adminOrg) {
+          const { data: created, error: createErr } = await supabase.from("organizations")
+            .insert({ owner_id: asAdmin.id, data: Object.assign({}, DEFAULT_ORG_DATA, { orgType: orgBody.orgType }) })
+            .select().single();
+          if (createErr) return sendJson(500, { error: createErr.message });
+          return sendJson(200, { orgType: created.data.orgType });
+        }
+        adminOrg.data.orgType = orgBody.orgType;
+        adminOrg.data.scheduleDays = null;
+        adminOrg.data.jobTypes = null;
+        await saveOrg(adminOrg.id, adminOrg.data);
+        return sendJson(200, { orgType: adminOrg.data.orgType });
+      }
+      if (!adminOrg) return sendJson(400, { error: "Set up your organization first." });
+      orgId = adminOrg.id;
+      data = adminOrg.data;
+      isAdminCaller = true;
+    } else if (inviteToken) {
+      var workerResolved = await getOrgByInviteToken(inviteToken);
+      if (!workerResolved) return sendJson(401, { error: "That invite link isn't valid anymore — ask your admin to resend it." });
+      orgId = workerResolved.org.id;
+      data = workerResolved.org.data;
+      callerWorkerId = workerResolved.workerId;
+    } else {
+      return sendJson(401, { error: "Sign in, or use your invite link." });
     }
+
+    // From here on, admin-only actions must actually come from the admin.
+    var ADMIN_ONLY = { schedule_config: true, workers_write: true, duties: true, church_assignments: true, announcements: true, swaps_resolve: true };
+    function requireAdmin() { return isAdminCaller; }
 
     if (resource === "schedule-config" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var scBody = await readBody(req);
-      if (Array.isArray(scBody.days)) {
-        data.scheduleDays = scBody.days.map((d) => String(d).slice(0, 40)).slice(0, 14);
-      }
-      if (Array.isArray(scBody.duties)) {
-        data.jobTypes = scBody.duties.map((d) => String(d).slice(0, 60)).slice(0, 40);
-      }
-      await writeData(data);
+      if (Array.isArray(scBody.days)) data.scheduleDays = scBody.days.map((d) => String(d).slice(0, 40)).slice(0, 14);
+      if (Array.isArray(scBody.duties)) data.jobTypes = scBody.duties.map((d) => String(d).slice(0, 60)).slice(0, 40);
+      await saveOrg(orgId, data);
       return sendJson(200, { scheduleDays: data.scheduleDays, jobTypes: data.jobTypes });
     }
 
     if (resource === "workers" && parts.length === 2 && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var wBody = await readBody(req);
       var nextId = data.team.reduce((max, w) => Math.max(max, w.id), 0) + 1;
-      var worker = {
+      var inviteTok = crypto.randomBytes(20).toString("hex");
+      var newWorker = {
         id: nextId,
         name: String(wBody.name || "").slice(0, 80),
         role: String(wBody.role || "").slice(0, 60),
         on: wBody.status === "on",
         email: String(wBody.email || "").slice(0, 120),
-        pin: String(wBody.pin || "").slice(0, 8),
+        token: inviteTok,
         invitedAt: null
       };
-      data.team.unshift(worker);
-      await writeData(data);
-      return sendJson(200, worker);
+      data.team.unshift(newWorker);
+      await saveOrg(orgId, data);
+      await supabase.from("worker_invite_tokens").insert({ token: inviteTok, org_id: orgId, worker_id: nextId });
+      return sendJson(200, newWorker);
     }
 
     if (resource === "workers" && parts[3] === "invite" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var inviteWorkerId = Number(parts[2]);
       var inviteWorker = data.team.find((w) => w.id === inviteWorkerId);
       if (!inviteWorker) return sendJson(404, { error: "not found" });
       if (!inviteWorker.email) return sendJson(400, { sent: false, reason: "no-email-on-file" });
 
       var appUrl = req.headers.origin || ("https://" + req.headers.host);
+      var inviteLink = appUrl + "/?invite=" + inviteWorker.token;
       var subject = "Your ShiftFlow sign-in";
       var text = "You're on the ShiftFlow schedule as " + inviteWorker.name + " (" + inviteWorker.role + ").\n" +
-        "Open " + appUrl + ", choose \"I'm a worker,\" pick your name (or enter your email), and sign in with this PIN: " + inviteWorker.pin;
+        "Open your personal link to see your shifts and clock in: " + inviteLink;
 
       var result = await sendInviteEmail(inviteWorker.email, subject, text);
       if (result.sent) {
         inviteWorker.invitedAt = new Date().toISOString();
-        await writeData(data);
+        await saveOrg(orgId, data);
       }
       return sendJson(200, { sent: result.sent, reason: result.reason || null, worker: inviteWorker });
     }
 
     if (resource === "workers" && parts[3] === "mark-invited" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var markWorkerId = Number(parts[2]);
       var markWorker = data.team.find((w) => w.id === markWorkerId);
       if (!markWorker) return sendJson(404, { error: "not found" });
       markWorker.invitedAt = new Date().toISOString();
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, markWorker);
     }
 
     if (resource === "workers" && parts[3] === "status" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var statusBody = await readBody(req);
       var statusWorkerId = Number(parts[2]);
       var statusWorker = data.team.find((w) => w.id === statusWorkerId);
       if (!statusWorker) return sendJson(404, { error: "not found" });
       statusWorker.on = statusBody.status === "on";
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, statusWorker);
     }
 
-    if (resource === "workers" && parts[3] === "pin" && req.method === "POST") {
-      var pinBody = await readBody(req);
-      var pinWorkerId = Number(parts[2]);
-      var pinWorker = data.team.find((w) => w.id === pinWorkerId);
-      if (!pinWorker) return sendJson(404, { error: "not found" });
-      pinWorker.pin = String(pinBody.pin || "").slice(0, 8);
-      await writeData(data);
-      return sendJson(200, pinWorker);
-    }
-
     if (resource === "workers" && req.method === "DELETE") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var delId = Number(parts[2]);
       data.team = data.team.filter((w) => w.id !== delId);
       delete data.duties[delId];
-      await writeData(data);
+      await saveOrg(orgId, data);
+      await supabase.from("worker_invite_tokens").delete().eq("org_id", orgId).eq("worker_id", delId);
       return sendJson(200, { removed: delId });
     }
 
     if (resource === "duties" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var dBody = await readBody(req);
       if (!data.duties[dBody.workerId]) data.duties[dBody.workerId] = {};
       data.duties[dBody.workerId][dBody.day] = dBody.duty;
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, dBody);
     }
 
     if (resource === "church-assignments" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var caBody = await readBody(req);
       if (!data.churchAssignments) data.churchAssignments = {};
       if (!data.churchAssignments[caBody.duty]) data.churchAssignments[caBody.duty] = {};
       data.churchAssignments[caBody.duty][caBody.service] = caBody.workerId;
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, caBody);
     }
 
     if (resource === "announcements" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var anBody = await readBody(req);
       if (!Array.isArray(data.announcements)) data.announcements = [];
       data.announcements.unshift(anBody);
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, anBody);
     }
 
+    // Workers create their own swap requests; only admins resolve them.
     if (resource === "swaps" && parts.length === 2 && req.method === "POST") {
       var newSwapBody = await readBody(req);
       var nextSwapId = data.swaps.reduce((max, s) => Math.max(max, s.id || 0), 0) + 1;
@@ -292,33 +337,36 @@ module.exports = async function handler(req, res) {
         status: "pending"
       };
       data.swaps.unshift(newSwap);
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, newSwap);
     }
 
     if (resource === "swaps" && parts.length === 3 && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
       var sBody = await readBody(req);
       var swapId = Number(parts[2]);
       var swap = data.swaps.find((s) => s.id === swapId);
       if (!swap) return sendJson(404, { error: "not found" });
       swap.status = sBody.status;
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, swap);
     }
 
+    // Workers clock themselves in/out; nothing admin-only about it.
     if (resource === "attendance" && req.method === "POST") {
       var aBody = await readBody(req);
       data.attendance.unshift(aBody);
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, aBody);
     }
 
+    // Shared channel — both admin and worker post here.
     if (resource === "chat" && req.method === "POST") {
       var channel = parts[2];
       var cBody = await readBody(req);
       if (!data.chat[channel]) data.chat[channel] = [];
       data.chat[channel].push(cBody);
-      await writeData(data);
+      await saveOrg(orgId, data);
       return sendJson(200, cBody);
     }
 

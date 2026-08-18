@@ -23,6 +23,7 @@ window.ShiftFlowAPI = (function () {
   var BASE = window.SHIFTFLOW_API_URL || "/api";
   var available = null; // null = unknown, true/false once checked
   var TIMEOUT_MS = 2500;
+  var inviteToken = null; // set once via setInviteToken() when a worker arrives via their personal ?invite= link
 
   function withTimeout(promise, ms) {
     var timeoutId;
@@ -38,8 +39,11 @@ window.ShiftFlowAPI = (function () {
   function checkBackend() {
     if (available !== null) return Promise.resolve(available);
     return withTimeout(
+      // Any real HTTP response (even a 401 — the multi-tenant backend
+      // requires auth on this same route) proves a backend is reachable.
+      // Only a network-level failure means "there's genuinely no backend".
       fetch(BASE + "/state", { method: "GET" })
-        .then(function (res) { available = res.ok; return available; })
+        .then(function () { available = true; return true; })
         .catch(function () { available = false; return false; }),
       TIMEOUT_MS
     ).then(function (result) {
@@ -62,12 +66,21 @@ window.ShiftFlowAPI = (function () {
     });
   }
 
+  // A worker's personal invite link (?invite=...) is their whole
+  // credential on the multi-tenant backend — every call while signed in
+  // that way carries it so the server knows which organization/worker
+  // this is. No-op for admins and for local dev (server.js ignores it).
+  function withInviteToken(path) {
+    if (!inviteToken) return path;
+    return path + (path.indexOf("?") === -1 ? "?" : "&") + "invite=" + encodeURIComponent(inviteToken);
+  }
+
   function request(path, options) {
     return checkBackend().then(function (ok) {
       if (!ok) return null;
       return withAuthHeader(options).then(function (opts) {
         return withTimeout(
-          fetch(BASE + path, opts)
+          fetch(BASE + withInviteToken(path), opts)
             .then(function (res) { return res.ok ? res.json() : null; })
             .catch(function () { return null; }),
           TIMEOUT_MS
@@ -92,6 +105,7 @@ window.ShiftFlowAPI = (function () {
 
   return {
     checkBackend: checkBackend,
+    setInviteToken: function (token) { inviteToken = token || null; },
     getState: function () { return get("/state"); },
     setOrg: function (orgType) { return post("/org", { orgType: orgType }); },
     setScheduleConfig: function (cfg) { return post("/schedule-config", cfg || {}); },

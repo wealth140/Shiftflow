@@ -144,6 +144,7 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
 }
 
 .role-gate-grid{ grid-template-columns: repeat(2, 1fr); max-width: 480px; margin: 0 auto; }
+.role-gate-grid.is-single-card{ grid-template-columns: 1fr; max-width: 300px; }
 @media (max-width: 560px){
   .role-gate-grid{ grid-template-columns: 1fr; }
 }
@@ -503,7 +504,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 
 .tag-list{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; min-height: 32px; }
 .tag-pill{ display: inline-flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; border-radius: 999px; background: var(--teal-tint); color: var(--teal-2); font-size: 0.8rem; font-weight: 500; }
-.tag-pill-remove{ width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--teal-2); font-size: 0.9rem; line-height: 1; opacity: 0.7; }
+.tag-pill-remove{ width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--teal-2); font-size: 0.9rem; line-height: 1; opacity: 0.7; flex-shrink: 0; }
 .tag-pill-remove:hover{ opacity: 1; background: rgba(0,0,0,0.08); }
 .tag-add-row{ display: flex; gap: 8px; }
 .tag-add-row input{ flex: 1; padding: 9px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); font-size: 0.85rem; }
@@ -538,7 +539,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .team-card .avatar{ width: 52px; height: 52px; font-size: 0.95rem; margin: 0 auto 12px; }
 .team-name{ font-size: 0.92rem; font-weight: 600; }
 .team-role{ font-size: 0.78rem; color: var(--slate); margin-bottom: 10px; }
-.team-status{ display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 0.7rem; padding: 4px 10px; border-radius: 999px; border: none; cursor: pointer; transition: filter 0.15s ease; }
+.team-status{ display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 0.7rem; padding: 7px 12px; border-radius: 999px; border: none; cursor: pointer; transition: filter 0.15s ease; min-height: 28px; }
 .team-status:hover{ filter: brightness(0.95); }
 .team-status.on::before{ content:""; width:6px; height:6px; border-radius:50%; background: var(--teal); }
 .team-status.off::before{ content:""; width:6px; height:6px; border-radius:50%; background: var(--slate-2); }

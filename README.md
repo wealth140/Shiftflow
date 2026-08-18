@@ -34,8 +34,10 @@ falls back silently if not.
 | `style.css` | All styling, fully responsive |
 | `script.js` | App logic — navigation, schedule, duties, swaps, chat, etc. |
 | `api.js` | Talks to the backend; falls back to local data if none is running |
-| `server.js` | Dependency-free Node backend + static file server |
-| `data.json` | Where the backend persists everything |
+| `supabase-auth.js` | Optional admin sign-in — no-op until Supabase is configured |
+| `server.js` | Dependency-free Node backend + static file server (local dev, single-tenant) |
+| `api/[...path].js` | Real deployment backend (Vercel + Supabase, multi-tenant) |
+| `data.json` | Where `server.js` persists everything, locally |
 
 ## The organization-type picker
 (Business, Church, Hospital, School, Hotel, Restaurant, Security Company, or
@@ -160,59 +162,56 @@ anything, the same way the Team tab isn't in their view at all. When it
 doesn't recognize a command, it says so directly instead of guessing at
 what you meant.
 
-## Deploying for real (Vercel + Supabase)
+## Deploying for real (Vercel + Supabase, multi-tenant)
 
-`node server.js` is great for trying the app out, but it keeps everything
-in one `data.json` file on disk — fine on your own machine, but most hosts
-(Vercel included) have a read-only or ephemeral filesystem in production,
-so a flat file won't survive a redeploy or even a second server instance.
-For an actual deployed instance real people use, swap that file for a real
-database:
+`node server.js` is great for trying the app out on your own machine — one
+organization, one `data.json` file, no accounts needed. The real deployment
+(`api/[...path].js` on Vercel + Supabase) is a different, bigger thing: it's
+multi-tenant — any number of businesses/churches/schools can sign up, each
+gets their own admin account and their own completely separate team,
+schedule, swaps, attendance, chat and announcements. Nobody sees anybody
+else's data.
 
 1. **Create a Supabase project** at [supabase.com](https://supabase.com)
    (free tier is enough for a small team). In the SQL editor, run:
    ```sql
-   create table if not exists app_state (
-     id text primary key,
+   create table if not exists public.organizations (
+     id uuid primary key default gen_random_uuid(),
+     owner_id uuid not null references auth.users(id) on delete cascade,
      data jsonb not null default '{}'::jsonb,
+     created_at timestamptz not null default now(),
      updated_at timestamptz not null default now()
    );
+   create unique index if not exists organizations_owner_idx on public.organizations(owner_id);
+
+   create table if not exists public.worker_invite_tokens (
+     token text primary key,
+     org_id uuid not null references public.organizations(id) on delete cascade,
+     worker_id bigint not null,
+     created_at timestamptz not null default now()
+   );
+
+   alter table public.organizations enable row level security;
+   create policy if not exists organizations_owner_all on public.organizations
+     for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
    ```
-   This one table holds the same data shape `data.json` does — one row per
-   deployment.
-2. From your Supabase project's **Settings → API**, copy the **Project URL**
-   and the **service_role key** (not the `anon` key — the service role key
-   is what lets the backend read/write without Supabase's row-level
-   security getting in the way, and it's never sent to the browser).
-3. **Push this repo to GitHub**, then **import it into Vercel**
+   `organizations` holds one row per admin (their whole team/schedule/etc.
+   as one JSONB blob, same shape `data.json` uses locally). The unique
+   index enforces one organization per admin account. `worker_invite_tokens`
+   is a fast lookup from a worker's personal link back to which
+   organization — and which worker — it belongs to. RLS is enabled as a
+   safety net (the backend uses the service_role key, which bypasses it
+   regardless, so this only matters if the anon key is ever queried
+   directly against these tables).
+2. In **Authentication → Providers**, make sure **Email** is on (default).
+   Optionally turn off "Confirm email" under **Authentication → Settings**
+   if you don't want new admins to confirm their address first.
+3. From **Settings → API**, copy the **Project URL**, the **anon key**, and
+   the **service_role key**.
+4. **Push this repo to GitHub**, then **import it into Vercel**
    ([vercel.com/new](https://vercel.com/new)) — pick "Other" as the
    framework preset; no build command is needed.
-4. In the Vercel project's **Settings → Environment Variables**, add:
-   - `SUPABASE_URL` — the Project URL from step 2.
-   - `SUPABASE_SERVICE_KEY` — the service_role key from step 2.
-   - `RESEND_API_KEY` / `EMAIL_FROM` — optional, for real invite emails
-     (see "Turning on real email delivery" below).
-5. Deploy. Vercel serves `index.html`/`style.css`/`script.js`/`api.js` as
-   static files and runs `api/[...path].js` as a serverless function for
-   everything under `/api/*` — same routes `server.js` uses locally, so
-   nothing in the frontend needs to change.
-
-`server.js` + `data.json` are still there for local development — running
-`node server.js` on your own machine is unaffected by any of this.
-
-### Turning on admin sign-in
-
-By default, clicking "Admin" on the access screen goes straight into the
-dashboard — no password, same as it's always worked. That's fine while
-you're the only one who knows the URL, but once this is actually deployed
-and reachable, anyone who finds the link can click "Admin" too. To require
-a real account:
-
-1. In your Supabase project, go to **Authentication → Providers** and make
-   sure **Email** is enabled (it is by default). Optionally turn off
-   "Confirm email" under **Authentication → Settings** if you don't want
-   the confirmation-email step for a small trusted team.
-2. In `index.html`, uncomment and fill in the block already sitting there:
+5. In `index.html`, uncomment and fill in the block already sitting there:
    ```html
    <script>
      window.SHIFTFLOW_SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
@@ -220,27 +219,47 @@ a real account:
    </script>
    ```
    The anon key is meant to be public — it identifies the project, it
-   doesn't grant access by itself. Commit this and redeploy. Clicking
-   "Admin" now shows a real sign-in/create-account screen. The first
-   person to sign up becomes an admin.
-3. Once you've created your account and confirmed it works, set
-   `REQUIRE_ADMIN_AUTH=true` in the Vercel project's environment variables
-   and redeploy. This is the switch that actually makes the backend check
-   for a signed-in admin on every admin action (adding/removing workers,
-   editing the schedule, posting announcements, resolving swaps) — before
-   this is set, those routes stay open the same way they always have, so
-   you can't lock yourself out mid-setup.
+   doesn't grant access on its own. This is also the switch that turns on
+   multi-tenant mode in the frontend: with it set, "Admin" shows a real
+   sign-in/create-account screen (first thing, before anything else), and
+   the generic "I'm a worker" option disappears — in multi-tenant mode a
+   worker only ever arrives through their own personal invite link (see
+   below), so there's no generic roster to pick a name from.
+6. In the Vercel project's **Settings → Environment Variables**, add:
+   - `SUPABASE_URL` — the Project URL from step 3.
+   - `SUPABASE_SERVICE_KEY` — the service_role key from step 3 (server-side
+     only secret, never sent to the browser).
+   - `RESEND_API_KEY` / `EMAIL_FROM` — optional, for real invite emails
+     (see "Turning on real email delivery" below).
+7. Commit the `index.html` change and deploy. Sign up as an admin, pick
+   your organization type, and you're in.
 
-Workers are unaffected either way — they still sign in with their name/
-email + PIN, not a Supabase account. That's intentionally lightweight (see
-below), while admin access can now be real.
+`server.js` + `data.json` are still there for local development, and stay
+single-tenant/PIN-based on purpose — it's the zero-config quick-start path,
+not a demo of multi-tenancy. Running `node server.js` on your own machine
+is unaffected by any of this.
 
-**Worth knowing before real people rely on this:** worker PINs are plain
-4-digit codes checked in the browser, not hashed or rate-limited — good
-enough to keep someone from wandering into the wrong view, not something
-that should gate anything sensitive. If that ever needs to hold up against
-someone actually trying to get in, treat it as a follow-up, not something
-this build claims to solve.
+### How workers get in (no PIN, no picking a name)
+
+Each worker gets their own unique link the moment an admin adds them — a
+long, unguessable token baked into the URL (`.../?invite=<token>`), copied
+or emailed from the Team tab exactly like before. Opening it takes them
+straight into their own shifts and clock-in, with no name to pick and no
+PIN to type — the link itself is what proves who they are.
+
+That means it should be handled like a password: forward it only to the
+worker it belongs to. If a link ever needs to be revoked (a phone was lost,
+a message was forwarded to the wrong person), removing that worker from
+the Team tab and re-adding them issues a fresh, unrelated token — the old
+link stops working immediately.
+
+However a worker got there, they can never reach the admin view — "Admin"
+always requires a real Supabase sign-in, and a worker's session never has
+one, regardless of what they click or type in the URL.
+
+**Worth knowing:** local dev (`server.js`) still uses the old 4-digit PIN
+scheme, since it's a separate, simpler code path meant for trying the app
+out, not real teams.
 
 ### Hosting the frontend and backend separately
 

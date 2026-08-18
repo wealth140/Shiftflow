@@ -341,6 +341,12 @@
       return;
     }
     team.forEach(function (m) {
+      // Local dev (server.js) still identifies workers by a PIN. The real
+      // multi-tenant backend (api/[...path].js) instead gives each worker
+      // a unique invite-link token and no PIN at all — the link itself is
+      // their credential. Both shapes render here so the same Team tab
+      // works against either backend.
+      var hasToken = !!m.token;
       var card = el("div", "team-card");
       card.innerHTML =
         "<button class='team-card-remove' aria-label='Remove " + escapeHtml(m.name) + "'><svg viewBox='0 0 24 24'><line x1='5' y1='5' x2='19' y2='19'/><line x1='19' y1='5' x2='5' y2='19'/></svg></button>" +
@@ -348,8 +354,9 @@
         "<p class='team-name'>" + escapeHtml(m.name) + "</p>" +
         "<p class='team-role'>" + escapeHtml(m.role) + "</p>" +
         (m.email ? "<p class='team-email'>" + escapeHtml(m.email) + "</p>" : "") +
-        "<p class='team-pin'>Worker PIN: " + escapeHtml(m.pin || "----") + "</p>" +
-        "<button class='team-pin-regen' type='button'>New PIN</button>" +
+        (hasToken
+          ? "<p class='field-hint'>Signs in with their personal invite link — no PIN.</p>"
+          : "<p class='team-pin'>Worker PIN: " + escapeHtml(m.pin || "----") + "</p><button class='team-pin-regen' type='button'>New PIN</button>") +
         "<button type='button' class='team-status " + (m.on ? "on" : "off") + "' title='Click to toggle'>" + (m.on ? "On shift" : "Off shift") + "</button>" +
         (m.invitedAt ? "<span class='team-invited' title='Invited " + escapeHtml(new Date(m.invitedAt).toLocaleString()) + "'>Invited</span>" : "") +
         "<div class='team-invite-row'>" +
@@ -357,7 +364,8 @@
           (m.email ? "<button class='btn btn-ghost btn-sm team-invite-email' type='button'>" + (m.invitedAt ? "Re-send email" : "Email invite") + "</button>" : "") +
         "</div>";
       card.querySelector(".team-card-remove").addEventListener("click", function () { removeWorker(m.id); });
-      card.querySelector(".team-pin-regen").addEventListener("click", function () { regenerateWorkerPin(m.id); });
+      var pinRegenBtn = card.querySelector(".team-pin-regen");
+      if (pinRegenBtn) pinRegenBtn.addEventListener("click", function () { regenerateWorkerPin(m.id); });
       card.querySelector(".team-status").addEventListener("click", function () { toggleWorkerStatus(m.id); });
       card.querySelector(".team-invite-copy").addEventListener("click", function () { copyInvite(m); });
       var emailBtn = card.querySelector(".team-invite-email");
@@ -380,6 +388,10 @@
 
   function inviteMessage(worker) {
     var url = window.location.origin + window.location.pathname;
+    if (worker.token) {
+      return "You're on the ShiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
+        "Open your personal link to see your shifts and clock in: " + url + "?invite=" + worker.token;
+    }
     return "You're on the ShiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
       "Open " + url + ", choose \"I'm a worker,\" pick your name, and sign in with this PIN: " + worker.pin;
   }
@@ -448,7 +460,10 @@
     renderSchedule();
     renderTodayShifts();
     updateStatCards();
-    showToast(worker.name + " was added — their sign-in PIN is " + worker.pin + ".");
+    var isMultiTenant = !!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured());
+    showToast(isMultiTenant
+      ? (worker.name + " was added — copy their invite link from the Team tab to get them signed in.")
+      : (worker.name + " was added — their sign-in PIN is " + worker.pin + "."));
     pushActivity("<strong>" + escapeHtml(worker.name) + "</strong> was added to the roster as " + escapeHtml(worker.role) + ".");
     pushNotification({ type: "schedule", title: "New worker added", sub: worker.name + " (" + worker.role + ") joined the roster.", time: "Just now" });
 
@@ -460,15 +475,21 @@
     // server, and the real worker would never see it. So once the server
     // confirms, swap our local id for the real one everywhere it's used.
     ShiftFlowAPI.addWorker({ name: worker.name, role: worker.role, status: data.status, email: worker.email, pin: worker.pin }).then(function (serverWorker) {
-      if (!serverWorker || serverWorker.id === localId) return;
-      worker.id = serverWorker.id;
-      if (duties[localId]) { duties[serverWorker.id] = duties[localId]; delete duties[localId]; }
-      if (churchAssignments) {
-        Object.keys(churchAssignments).forEach(function (duty) {
-          Object.keys(churchAssignments[duty]).forEach(function (service) {
-            if (String(churchAssignments[duty][service]) === String(localId)) churchAssignments[duty][service] = serverWorker.id;
+      if (!serverWorker) return;
+      // The real backend (api/[...path].js) generates its own invite-link
+      // token server-side — the client never had it, so it always needs
+      // copying over, independent of whether the id happened to match.
+      if (serverWorker.token) { worker.token = serverWorker.token; delete worker.pin; }
+      if (serverWorker.id !== localId) {
+        worker.id = serverWorker.id;
+        if (duties[localId]) { duties[serverWorker.id] = duties[localId]; delete duties[localId]; }
+        if (churchAssignments) {
+          Object.keys(churchAssignments).forEach(function (duty) {
+            Object.keys(churchAssignments[duty]).forEach(function (service) {
+              if (String(churchAssignments[duty][service]) === String(localId)) churchAssignments[duty][service] = serverWorker.id;
+            });
           });
-        });
+        }
       }
       renderTeam();
       renderSchedule();
@@ -1767,6 +1788,15 @@
     accessMode = null;
     currentWorker = null;
     roleGate.hidden = false;
+    // Multi-tenant deployments (Supabase auth configured): workers only
+    // ever arrive through their own personal invite link, which resolves
+    // straight into their view — there's no organization context for a
+    // generic "I'm a worker" picker to hand them into, so it isn't shown.
+    if (roleWorkerBtn && window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) {
+      roleWorkerBtn.hidden = true;
+      var roleGrid = roleWorkerBtn.closest(".role-gate-grid");
+      if (roleGrid) roleGrid.classList.add("is-single-card");
+    }
     workerLoginGate.hidden = true;
     if (adminAuthGate) adminAuthGate.hidden = true;
     appEl.hidden = true;
@@ -1780,7 +1810,12 @@
     if (adminAuthGate) adminAuthGate.hidden = true;
     appEl.hidden = false;
     workerShell.hidden = true;
-    if (adminSignOutBtn) adminSignOutBtn.hidden = !(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured());
+    var multiTenantActive = !!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured());
+    if (adminSignOutBtn) adminSignOutBtn.hidden = !multiTenantActive;
+    // "Switch to worker view" only makes sense when there's a generic
+    // worker picker to switch into — multi-tenant workers only ever have
+    // their own personal invite link, which this admin doesn't have.
+    if (switchRoleBtn) switchRoleBtn.hidden = multiTenantActive;
     updateToggleSurface();
   }
 
@@ -1835,8 +1870,53 @@
     action(email, password).then(function (result) {
       if (result.error) { msg.textContent = result.error; return; }
       if (result.needsConfirmation) { msg.textContent = "Account created — check your email to confirm it, then sign in."; adminAuthMode = "signin"; renderAdminAuthMode(); return; }
-      enterAdmin();
-      showToast(adminAuthMode === "signup" ? "Account created — welcome to ShiftFlow." : "Signed in.");
+      var wasSignup = adminAuthMode === "signup";
+      checkAdminOrgAndEnter();
+      showToast(wasSignup ? "Account created — welcome to ShiftFlow." : "Signed in.");
+    });
+  }
+
+  // After a sign-in (or on page load with an existing session), find out
+  // whether this admin has already set up an organization. First-timers
+  // get the org-type picker; everyone else goes straight to their
+  // dashboard, already loaded with their own team's data.
+  function checkAdminOrgAndEnter() {
+    ShiftFlowAPI.getState().then(function (data) {
+      if (data) { hydrateFromBackend(data); renderEverything(); }
+      if (data && data.orgType) {
+        orgGate.classList.add("is-hidden");
+        enterAdmin();
+      } else {
+        roleGate.hidden = true;
+        if (adminAuthGate) adminAuthGate.hidden = true;
+        orgGate.classList.remove("is-hidden");
+        updateToggleSurface();
+      }
+    });
+  }
+
+  // A worker's whole "sign-in" is opening their personal link — no name
+  // picker, no PIN. The token in ?invite= resolves straight to them.
+  function enterViaInviteLink(token) {
+    ShiftFlowAPI.setInviteToken(token);
+    roleGate.hidden = true;
+    ShiftFlowAPI.getState().then(function (data) {
+      var worker = data && typeof data.currentWorkerId !== "undefined"
+        ? (data.team || []).concat(team).find(function (w) { return w.id === data.currentWorkerId; })
+        : null;
+      if (!data || !worker) {
+        ShiftFlowAPI.setInviteToken(null);
+        showToast("That invite link isn't valid anymore — ask your admin to resend it.", true);
+        showRoleGate();
+        return;
+      }
+      hydrateFromBackend(data);
+      renderEverything();
+      var resolvedWorker = team.find(function (w) { return w.id === data.currentWorkerId; }) || worker;
+      enterWorkerApp(resolvedWorker);
+    }).catch(function () {
+      showToast("Couldn't reach the server to check your invite link.", true);
+      showRoleGate();
     });
   }
   var adminAuthSubmitBtn = $("#adminAuthSubmitBtn");
@@ -1927,7 +2007,12 @@
   if (workerLoginEmailField) workerLoginEmailField.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); workerLoginSubmitBtn.click(); } });
 
   var workerLogoutBtn = $("#workerLogoutBtn");
-  if (workerLogoutBtn) workerLogoutBtn.addEventListener("click", showRoleGate);
+  if (workerLogoutBtn) {
+    workerLogoutBtn.addEventListener("click", function () {
+      ShiftFlowAPI.setInviteToken(null);
+      showRoleGate();
+    });
+  }
 
   // Worker tab navigation
   var workerTabs = $all(".worker-tab");
@@ -2130,7 +2215,27 @@
     populateRoleSelect();
     updateToggleSurface();
 
-    // If a backend is reachable, quietly swap in its data on top.
+    // A worker's personal invite link overrides everything else — it
+    // identifies exactly who they are, so skip straight to their view.
+    var inviteParam = new URLSearchParams(window.location.search).get("invite");
+    if (inviteParam) {
+      enterViaInviteLink(inviteParam);
+      return;
+    }
+
+    var multiTenant = window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured();
+    if (multiTenant) {
+      // Multi-tenant deployments have no single global org — each admin
+      // picks theirs right after signing in, not before.
+      orgGate.classList.add("is-hidden");
+      window.ShiftFlowAuth.getSession().then(function (session) {
+        if (session) checkAdminOrgAndEnter(); else showRoleGate();
+      });
+      return;
+    }
+
+    // Single-tenant (local dev, or a deployment that hasn't configured
+    // Supabase auth) — original zero-config behavior, unchanged.
     ShiftFlowAPI.getState().then(function (data) {
       if (!data) return; // no backend, or it timed out — local state stands
       hydrateFromBackend(data);
@@ -2138,13 +2243,6 @@
       if (state.orgType) {
         orgGate.classList.add("is-hidden");
         showRoleGate(); // org's already set up — ask whether this visit is admin or worker
-        // Already signed in from a previous visit? Skip straight to the
-        // dashboard instead of asking them to sign in again.
-        if (window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) {
-          window.ShiftFlowAuth.getSession().then(function (session) {
-            if (session) enterAdmin();
-          });
-        }
       }
     }).catch(function () { /* local state already rendered */ });
   });
