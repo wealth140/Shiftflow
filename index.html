@@ -30,15 +30,13 @@
      uncomment and set this to your backend's URL before api.js loads:
 <script>window.SHIFTFLOW_API_URL = "https://your-backend.example.com/api";</script>
 -->
-<!-- For a real deployment (Vercel + Supabase, see README "Deploying for
-     real"), set these two so admin sign-in is a real account instead of an
-     open "Admin" button. Without them the app runs exactly as before —
-     zero config needed for local dev:
+<!-- Real deployment (Vercel + Supabase, see README "Deploying for real").
+     The anon key is meant to be public — it identifies the project, it
+     doesn't grant access on its own. -->
 <script>
-  window.SHIFTFLOW_SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
-  window.SHIFTFLOW_SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+  window.SHIFTFLOW_SUPABASE_URL = "https://gkeilezxlprjheeasslk.supabase.co";
+  window.SHIFTFLOW_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrZWlsZXp4bHByamhlZWFzc2xrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc0NDQwODEsImV4cCI6MjEwMzAyMDA4MX0.w1mtt2E9kAUpTpacXEbkKUWdm4n2PqjgkorcryjLAME";
 </script>
--->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
