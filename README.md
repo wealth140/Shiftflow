@@ -192,7 +192,8 @@ else's data.
    );
 
    alter table public.organizations enable row level security;
-   create policy if not exists organizations_owner_all on public.organizations
+   drop policy if exists organizations_owner_all on public.organizations;
+   create policy organizations_owner_all on public.organizations
      for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
    ```
    `organizations` holds one row per admin (their whole team/schedule/etc.
