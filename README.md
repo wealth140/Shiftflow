@@ -207,7 +207,15 @@ else's data.
 2. In **Authentication → Providers**, make sure **Email** is on (default).
    Optionally turn off "Confirm email" under **Authentication → Settings**
    if you don't want new admins to confirm their address first.
-3. From **Settings → API**, copy the **Project URL**, the **anon key**, and
+3. In **Authentication → URL Configuration**, set **Site URL** to your real
+   deployed URL (e.g. `https://your-app.vercel.app`) — it defaults to
+   `http://localhost:3000`, which is where confirmation emails will send
+   people if this is skipped. Add the same URL under **Redirect URLs** too
+   (Supabase only allows redirecting to URLs on that list). The app itself
+   also explicitly tells Supabase where to send people back on sign-up, but
+   Supabase still checks that URL against this allow-list regardless, so
+   this step is required either way.
+4. From **Settings → API**, copy the **Project URL**, the **anon key**, and
    the **service_role key**.
 4. **Push this repo to GitHub**, then **import it into Vercel**
    ([vercel.com/new](https://vercel.com/new)) — pick "Other" as the

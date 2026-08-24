@@ -2211,6 +2211,12 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    // Read this before anything else touches the page — Supabase's client
+    // strips the #access_token=...&type=signup fragment it left in the URL
+    // shortly after it processes it, so this is a narrow window to notice
+    // "this load is someone arriving fresh off their confirmation email".
+    var justConfirmedEmail = /type=signup/.test(window.location.hash);
+
     // Render immediately from local (empty) state — never blocks on the network.
     renderEverything();
     renderWidget();
@@ -2231,7 +2237,12 @@
       // picks theirs right after signing in, not before.
       orgGate.classList.add("is-hidden");
       window.ShiftFlowAuth.getSession().then(function (session) {
-        if (session) checkAdminOrgAndEnter(); else showRoleGate();
+        if (session) {
+          checkAdminOrgAndEnter();
+          if (justConfirmedEmail) showToast("Email confirmed — you're signed in.");
+        } else {
+          showRoleGate();
+        }
       });
       return;
     }

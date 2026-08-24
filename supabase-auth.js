@@ -44,7 +44,18 @@ window.ShiftFlowAuth = (function () {
 
   function signUp(email, password) {
     if (!client) return Promise.resolve({ error: "This deployment doesn't have admin sign-in configured." });
-    return client.auth.signUp({ email: email, password: password }).then(function (r) {
+    // Without this, Supabase falls back to the project's "Site URL" dashboard
+    // setting for the confirmation email's link — which is easy to leave
+    // pointed at whatever it defaulted to (often localhost) and forget
+    // about. Saying explicitly where to come back to means the link is
+    // right regardless of that setting, as long as this exact URL is also
+    // added to the project's Redirect URLs allow-list (a Supabase security
+    // requirement — see README "Turning on admin sign-in").
+    return client.auth.signUp({
+      email: email,
+      password: password,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+    }).then(function (r) {
       var needsConfirmation = !!(r.data && r.data.user && !r.data.session);
       return { error: r.error ? r.error.message : null, session: r.data && r.data.session, needsConfirmation: needsConfirmation };
     });
