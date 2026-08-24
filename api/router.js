@@ -150,8 +150,13 @@ module.exports = async function handler(req, res) {
   function sendJson(status, obj) { res.status(status).json(obj); }
 
   try {
-    var rawParts = req.query.path || [];
-    var parts = ["api"].concat(Array.isArray(rawParts) ? rawParts : [rawParts]); // mirrors server.js's parts[1]=="workers" etc.
+    // vercel.json rewrites every /api/* request here as /api/router?path=<the
+    // rest of the url>&<original query string>. Vanilla Vercel serverless
+    // functions (unlike Next.js) don't support [...catchall] filesystem
+    // routing outside of a Next.js project, so this rewrite is what actually
+    // gets every sub-path to this one function.
+    var pathSegments = String(req.query.path || "").split("/").filter(Boolean);
+    var parts = ["api"].concat(pathSegments); // mirrors server.js's parts[1]=="workers" etc.
     var resource = parts[1];
     var inviteToken = (req.query.invite || "").toString().trim();
 

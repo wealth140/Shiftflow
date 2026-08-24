@@ -1,5 +1,8 @@
 {
   "framework": null,
   "buildCommand": null,
-  "installCommand": null
+  "installCommand": null,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/router?path=$1" }
+  ]
 }

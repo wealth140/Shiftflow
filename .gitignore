@@ -8,3 +8,6 @@ data.json
 .vercel
 .env
 .env.local
+
+.vercel
+.env*
