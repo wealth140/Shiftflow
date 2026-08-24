@@ -160,14 +160,14 @@ module.exports = async function handler(req, res) {
     var resource = parts[1];
     var inviteToken = (req.query.invite || "").toString().trim();
 
-    /* ---------- GET /state — the one route with two shapes ---------- */
+    /* ---------- GET /state — the one route with two shapes ----------
+       An invite token, when present, always wins — it names a specific
+       worker explicitly, so it takes priority over any admin session
+       that happens to be signed in on the same browser (Supabase persists
+       that session in localStorage independent of the URL, so without
+       this a leftover/still-open admin login would hijack a worker's
+       link into showing the admin's own view instead). */
     if (resource === "state" && req.method === "GET") {
-      var adminUser = await getAdminUser(req);
-      if (adminUser) {
-        var org = await getOrgForAdmin(adminUser);
-        if (!org) return sendJson(200, Object.assign({}, DEFAULT_ORG_DATA, { hasOrg: false }));
-        return sendJson(200, Object.assign({}, org.data, { hasOrg: true }));
-      }
       if (inviteToken) {
         var resolved = await getOrgByInviteToken(inviteToken);
         if (!resolved) return sendJson(404, { error: "That invite link isn't valid anymore — ask your admin to resend it." });
@@ -178,11 +178,17 @@ module.exports = async function handler(req, res) {
           currentWorkerId: resolved.workerId
         }));
       }
+      var adminUser = await getAdminUser(req);
+      if (adminUser) {
+        var org = await getOrgForAdmin(adminUser);
+        if (!org) return sendJson(200, Object.assign({}, DEFAULT_ORG_DATA, { hasOrg: false }));
+        return sendJson(200, Object.assign({}, org.data, { hasOrg: true }));
+      }
       return sendJson(401, { error: "Sign in, or use your invite link." });
     }
 
     /* ---------- everything else needs an org, one way or another ---------- */
-    var asAdmin = await getAdminUser(req);
+    var asAdmin = inviteToken ? null : await getAdminUser(req);
     var orgId, data, isAdminCaller = false, callerWorkerId = null;
 
     if (asAdmin) {

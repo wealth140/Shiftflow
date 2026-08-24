@@ -1264,6 +1264,7 @@
   // a few seconds of staleness. A worker's own read-only "My Shifts" list
   // has no such risk, so that does stay live.
   function pollBackend() {
+    if (accessMode !== "admin" && accessMode !== "worker") return; // nobody's signed in yet — nothing to sync
     ShiftFlowAPI.getState().then(function (data) {
       if (!data) return;
 
@@ -1899,6 +1900,7 @@
   // picker, no PIN. The token in ?invite= resolves straight to them.
   function enterViaInviteLink(token) {
     ShiftFlowAPI.setInviteToken(token);
+    orgGate.classList.add("is-hidden");
     roleGate.hidden = true;
     ShiftFlowAPI.getState().then(function (data) {
       var worker = data && typeof data.currentWorkerId !== "undefined"

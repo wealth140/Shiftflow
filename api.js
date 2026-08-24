@@ -56,7 +56,15 @@ window.ShiftFlowAPI = (function () {
   // signed-in admin's token so the backend can tell an authenticated admin
   // apart from an anonymous caller on admin-only routes. Harmless no-op
   // when auth isn't configured for this deployment.
+  //
+  // Skipped entirely once an invite token is set: Supabase persists the
+  // admin's session in localStorage, so if the same browser that just
+  // signed in as an admin also opens (or still has open) a worker's
+  // ?invite= link, the admin token would otherwise get attached to that
+  // request too — and the backend would resolve it as the admin, not the
+  // worker the link is actually for.
   function withAuthHeader(options) {
+    if (inviteToken) return Promise.resolve(options);
     if (!window.ShiftFlowAuth || !window.ShiftFlowAuth.isConfigured()) return Promise.resolve(options);
     return window.ShiftFlowAuth.getAccessToken().then(function (token) {
       if (!token) return options;
