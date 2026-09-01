@@ -14,9 +14,17 @@
 window.ShiftFlowAuth = (function () {
   "use strict";
 
+  // index.html is shared between local dev (server.js, single-tenant,
+  // PIN-based) and the real deployment (Vercel + Supabase, multi-tenant) —
+  // the production keys have to be baked into that one file for Vercel to
+  // serve them, which means they're technically present even when running
+  // locally. Multi-tenant auth would be actively broken against server.js
+  // (it has no concept of Supabase sessions or per-admin orgs), so it's
+  // switched off by hostname rather than just by whether the keys exist.
+  var isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
   var URL = window.SHIFTFLOW_SUPABASE_URL || "";
   var KEY = window.SHIFTFLOW_SUPABASE_ANON_KEY || "";
-  var client = (URL && KEY && window.supabase && window.supabase.createClient)
+  var client = (!isLocalDev && URL && KEY && window.supabase && window.supabase.createClient)
     ? window.supabase.createClient(URL, KEY)
     : null;
 
