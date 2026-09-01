@@ -104,6 +104,36 @@
   </div>
 </div>
 
+<!-- ============ SELF-SERVE JOIN GATE ============
+     Shown when someone opens an org's join link (?join=<orgId>, from the
+     Team tab's "Copy join link"). No admin approval step — filling this
+     in adds them to the roster immediately and signs them straight into
+     their own worker view, same as clicking a personal invite link. -->
+<div class="gate" id="joinGate" hidden>
+  <div class="gate-inner">
+    <p class="gate-eyebrow" id="joinGateEyebrow">Join the team</p>
+    <h1 class="gate-title">Add yourself to the schedule</h1>
+    <p class="gate-sub" id="joinGateSub">Fill this in and you're on the roster — no PIN, no waiting on an invite.</p>
+    <div class="worker-login-form" id="joinForm">
+      <label>Your name
+        <input type="text" id="joinName" placeholder="Full name" autocomplete="name">
+      </label>
+      <label>Your role
+        <select id="joinRole"></select>
+        <span class="field-hint">Used to auto-assign you to open shifts.</span>
+      </label>
+      <label>Email (optional)
+        <input type="email" id="joinEmail" placeholder="you@example.com" autocomplete="email">
+      </label>
+      <p class="field-hint" id="joinMsg"></p>
+      <div class="worker-login-actions">
+        <button type="button" class="btn btn-primary" id="joinSubmitBtn">Join</button>
+      </div>
+    </div>
+    <p class="gate-sub" id="joinGateInvalidMsg" hidden>That join link isn't valid — ask your admin for a current one.</p>
+  </div>
+</div>
+
 <!-- ============ WORKER SIGN-IN GATE ============ -->
 <div class="gate" id="workerLoginGate" hidden>
   <div class="gate-inner">
@@ -381,10 +411,16 @@
       <section class="view" id="view-team" hidden>
         <div class="team-toolbar">
           <p class="view-lede">Everyone on the roster, at a glance.</p>
-          <button class="btn btn-primary" id="addWorkerBtn">
-            <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Add worker
-          </button>
+          <div class="schedule-toolbar-actions">
+            <button class="btn btn-ghost" id="copyJoinLinkBtn" type="button" hidden>
+              <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1-1"/></svg>
+              Copy join link
+            </button>
+            <button class="btn btn-primary" id="addWorkerBtn">
+              <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add worker
+            </button>
+          </div>
         </div>
 
         <div class="worker-form-wrap" id="workerFormWrap" hidden>

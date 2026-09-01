@@ -182,9 +182,53 @@ module.exports = async function handler(req, res) {
       if (adminUser) {
         var org = await getOrgForAdmin(adminUser);
         if (!org) return sendJson(200, Object.assign({}, DEFAULT_ORG_DATA, { hasOrg: false }));
-        return sendJson(200, Object.assign({}, org.data, { hasOrg: true }));
+        return sendJson(200, Object.assign({}, org.data, { hasOrg: true, orgId: org.id }));
       }
       return sendJson(401, { error: "Sign in, or use your invite link." });
+    }
+
+    /* ---------- GET /join-info — public, powers the self-serve join form.
+       Deliberately minimal: just enough to render the form (what kind of
+       org this is, what roles are available) — never the existing roster,
+       emails, or anything else about who already works there. */
+    if (resource === "join-info" && req.method === "GET") {
+      var joinOrgId = (req.query.org || "").toString().trim();
+      if (!joinOrgId) return sendJson(400, { error: "Missing org id." });
+      const { data: joinOrg } = await supabase.from("organizations").select("data").eq("id", joinOrgId).maybeSingle();
+      if (!joinOrg) return sendJson(404, { error: "That join link isn't valid — ask your admin for a current one." });
+      return sendJson(200, { orgType: joinOrg.data.orgType, jobTypes: joinOrg.data.jobTypes });
+    }
+
+    // Self-serve join — no admin action needed first. Anyone with the org's
+    // join link (Team tab -> "Copy join link") can add themselves; there's
+    // no approval step, by design (that's what was asked for), so the
+    // admin gets an activity-log entry either way to stay aware of who's
+    // joined. A worker created this way is otherwise identical to one the
+    // admin added by hand — same invite-token login, same everything.
+    if (resource === "join" && req.method === "POST") {
+      var joinBody = await readBody(req);
+      var targetOrgId = String(joinBody.orgId || "").trim();
+      if (!targetOrgId) return sendJson(400, { error: "Missing org id." });
+      const { data: targetOrg, error: targetErr } = await supabase.from("organizations").select("*").eq("id", targetOrgId).maybeSingle();
+      if (targetErr || !targetOrg) return sendJson(404, { error: "That join link isn't valid — ask your admin for a current one." });
+      var joinData = targetOrg.data;
+      var joinNextId = joinData.team.reduce((max, w) => Math.max(max, w.id), 0) + 1;
+      var joinTok = crypto.randomBytes(20).toString("hex");
+      var joinedWorker = {
+        id: joinNextId,
+        name: String(joinBody.name || "").slice(0, 80),
+        role: String(joinBody.role || "").slice(0, 60),
+        on: false,
+        email: String(joinBody.email || "").slice(0, 120),
+        token: joinTok,
+        invitedAt: null,
+        joinedSelf: true
+      };
+      if (!joinedWorker.name) return sendJson(400, { error: "Name is required." });
+      joinData.team.unshift(joinedWorker);
+      await saveOrg(targetOrgId, joinData);
+      await supabase.from("worker_invite_tokens").insert({ token: joinTok, org_id: targetOrgId, worker_id: joinNextId });
+      return sendJson(200, { worker: joinedWorker, orgType: joinData.orgType });
     }
 
     /* ---------- everything else needs an org, one way or another ---------- */

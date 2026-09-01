@@ -126,7 +126,7 @@
   };
 
   var ALL_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  var state = { orgType: null, scheduleDays: [], jobTypes: [] };
+  var state = { orgType: null, scheduleDays: [], jobTypes: [], orgId: null };
 
   // The admin can customize which days/services are on the schedule and
   // what job types workers get assigned to (Schedule setup panel). When
@@ -165,7 +165,16 @@
     state.scheduleDays = [];
     state.jobTypes = [];
     orgGate.classList.add("is-hidden");
-    ShiftFlowAPI.setOrg(key).catch(function () {});
+    ShiftFlowAPI.setOrg(key).then(function () {
+      // Multi-tenant only: the join-link button needs the org's id, which
+      // only exists once the server has actually created the row — pick
+      // it up now rather than waiting for the next full page load.
+      if (window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) {
+        ShiftFlowAPI.getState().then(function (data) {
+          if (data && data.orgId) { state.orgId = data.orgId; updateJoinLinkButton(); }
+        });
+      }
+    }).catch(function () {});
     enterAdmin(); // whoever sets up the org type becomes the first admin session
     refreshOrgDependentUI();
     showToast("Set up for " + ORG_TYPES[key].label + ". Change this anytime from the sidebar.");
@@ -1311,6 +1320,16 @@
       // are safe to pick up any time — unlike the Schedule grid, there's no
       // in-progress editing state on the team cards themselves.
       if (accessMode === "admin" && Array.isArray(data.team) && data.team.length !== team.length) {
+        // Self-serve joins (no admin action, so nothing else surfaces them)
+        // get called out specifically — everyone else, don't guess why the
+        // count changed.
+        var oldIds = team.map(function (w) { return w.id; });
+        data.team.forEach(function (w) {
+          if (w.joinedSelf && oldIds.indexOf(w.id) === -1) {
+            pushActivity("<strong>" + escapeHtml(w.name) + "</strong> joined the team using your join link, as " + escapeHtml(w.role) + ".");
+            pushNotification({ type: "schedule", title: "New team member", sub: w.name + " joined via your join link.", time: "Just now" });
+          }
+        });
         team = data.team;
         nextWorkerId = team.reduce(function (max, w) { return Math.max(max, w.id); }, 0) + 1;
         renderTeam();
@@ -1505,6 +1524,8 @@
     "• \"mark Sam on shift\" / \"mark Sam off shift\"<br>" +
     "• \"add job type Delivery Driver\" / \"remove job type Bar\"<br>" +
     "• \"working days: Mon, Tue, Wed\"<br>" +
+    "• \"join link\" (multi-tenant: get your team's self-serve join link)<br>" +
+    "• \"switch organization to Restaurant\"<br>" +
     "• \"approve swap 3\" or \"approve Sam's swap\"<br>" +
     "• \"decline swap 3\"<br>" +
     "• \"auto-assign open shifts\"<br>" +
@@ -1534,6 +1555,25 @@
       }
       if (foundStatus.ambiguous) return "That matches more than one person: " + foundStatus.ambiguous.map(function (w) { return escapeHtml(w.name); }).join(", ") + ". Try the full name.";
       return "I couldn't find anyone named \"" + escapeHtml(statusTarget) + "\" on the roster.";
+    }
+
+    if (/join ?link|invite link for (the )?team|link (for|to) join/.test(lower)) {
+      if (!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured())) return "Join links are a multi-tenant feature — this deployment uses per-worker invite links instead. Use \"add worker\" and then Copy invite from their Team card.";
+      if (!state.orgId) return "Set up your organization first — I'll have a join link once that's done.";
+      var joinUrl = window.location.origin + window.location.pathname + "?join=" + state.orgId;
+      return "Anyone with this link can add themselves to your roster: " + joinUrl;
+    }
+
+    var orgTypeMatch = raw.match(/^(?:set|switch|change)\s+(?:the\s+)?organi[sz]ation(?:\s+type)?\s+to\s+(.+)$/i);
+    if (orgTypeMatch) {
+      var orgTypeInput = orgTypeMatch[1].trim().toLowerCase();
+      var matchedOrgKey = Object.keys(ORG_TYPES).find(function (k) { return ORG_TYPES[k].label.toLowerCase() === orgTypeInput || k === orgTypeInput; });
+      if (!matchedOrgKey) {
+        var validOrgTypes = Object.keys(ORG_TYPES).map(function (k) { return escapeHtml(ORG_TYPES[k].label); }).join(", ");
+        return "I don't recognize \"" + escapeHtml(orgTypeMatch[1].trim()) + "\". Valid types: " + validOrgTypes + ".";
+      }
+      selectOrg(matchedOrgKey);
+      return "Switched to " + escapeHtml(ORG_TYPES[matchedOrgKey].label) + ". This resets your working days/services and job types back to its defaults.";
     }
 
     var addJobMatch = raw.match(/^add(?: a| an)? (?:job ?type|duty|role)\s+(.+)$/i);
@@ -1817,7 +1857,29 @@
     // worker picker to switch into — multi-tenant workers only ever have
     // their own personal invite link, which this admin doesn't have.
     if (switchRoleBtn) switchRoleBtn.hidden = multiTenantActive;
+    updateJoinLinkButton();
     updateToggleSurface();
+  }
+
+  var copyJoinLinkBtn = $("#copyJoinLinkBtn");
+  function updateJoinLinkButton() {
+    if (!copyJoinLinkBtn) return;
+    copyJoinLinkBtn.hidden = !(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured() && state.orgId);
+  }
+  if (copyJoinLinkBtn) {
+    copyJoinLinkBtn.addEventListener("click", function () {
+      if (!state.orgId) return;
+      var url = window.location.origin + window.location.pathname + "?join=" + state.orgId;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function () {
+          showToast("Join link copied — anyone with it can add themselves to the roster.");
+        }, function () {
+          window.prompt("Copy your team's join link:", url);
+        });
+      } else {
+        window.prompt("Copy your team's join link:", url);
+      }
+    });
   }
 
   /* --- Admin sign-in (only active when Supabase auth is configured) --- */
@@ -1921,6 +1983,74 @@
       showRoleGate();
     });
   }
+  // Self-serve join: someone opens an org's join link, fills in a small
+  // form, and is on the roster + signed into their own worker view
+  // immediately — no admin action needed first, no approval step.
+  var joinGate = $("#joinGate");
+  function enterViaJoinLink(orgId) {
+    roleGate.hidden = true;
+    orgGate.classList.add("is-hidden");
+    if (!joinGate) return;
+    joinGate.hidden = false;
+    updateToggleSurface();
+    ShiftFlowAPI.getJoinInfo(orgId).then(function (info) {
+      var form = $("#joinForm");
+      var invalidMsg = $("#joinGateInvalidMsg");
+      if (!info) {
+        if (form) form.hidden = true;
+        if (invalidMsg) invalidMsg.hidden = false;
+        return;
+      }
+      var cfg = ORG_TYPES[info.orgType] || ORG_TYPES.business;
+      var duties = (Array.isArray(info.jobTypes) && info.jobTypes.length) ? info.jobTypes : cfg.duties;
+      var roleSelect = $("#joinRole");
+      roleSelect.innerHTML = "";
+      duties.forEach(function (d) {
+        var opt = document.createElement("option");
+        opt.value = d; opt.textContent = d;
+        roleSelect.appendChild(opt);
+      });
+      $("#joinGateEyebrow").textContent = "Join " + cfg.label;
+      $("#joinName").focus();
+    });
+  }
+  function submitJoin(orgId) {
+    var name = $("#joinName").value.trim();
+    var role = $("#joinRole").value;
+    var email = $("#joinEmail").value.trim();
+    var msg = $("#joinMsg");
+    if (!name) { msg.textContent = "Enter your name first."; return; }
+    if (!role) { msg.textContent = "Pick a role first."; return; }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.textContent = "That email doesn't look right."; return; }
+    msg.textContent = "Joining…";
+    ShiftFlowAPI.joinOrg({ orgId: orgId, name: name, role: role, email: email }).then(function (result) {
+      if (!result || !result.worker) { msg.textContent = "Couldn't join right now — try again in a moment."; return; }
+      ShiftFlowAPI.setInviteToken(result.worker.token);
+      state.orgType = result.orgType;
+      team = [result.worker];
+      renderEverything();
+      enterWorkerApp(result.worker);
+      showToast("Welcome, " + result.worker.name + " — you're on the roster.");
+    }).catch(function () {
+      msg.textContent = "Couldn't reach the server — try again in a moment.";
+    });
+  }
+  var joinSubmitBtn = $("#joinSubmitBtn");
+  if (joinSubmitBtn) {
+    joinSubmitBtn.addEventListener("click", function () {
+      var orgId = new URLSearchParams(window.location.search).get("join");
+      submitJoin(orgId);
+    });
+  }
+  var joinForm = $("#joinForm");
+  if (joinForm) {
+    $all("input", joinForm).forEach(function (input) {
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); joinSubmitBtn.click(); }
+      });
+    });
+  }
+
   var adminAuthSubmitBtn = $("#adminAuthSubmitBtn");
   if (adminAuthSubmitBtn) adminAuthSubmitBtn.addEventListener("click", submitAdminAuth);
   var adminAuthForm = $("#adminAuthForm");
@@ -2186,6 +2316,7 @@
     if (data.orgType) state.orgType = data.orgType;
     if (Array.isArray(data.scheduleDays)) state.scheduleDays = data.scheduleDays;
     if (Array.isArray(data.jobTypes)) state.jobTypes = data.jobTypes;
+    if (data.orgId) state.orgId = data.orgId;
   }
 
   function renderEverything() {
@@ -2225,9 +2356,15 @@
 
     // A worker's personal invite link overrides everything else — it
     // identifies exactly who they are, so skip straight to their view.
-    var inviteParam = new URLSearchParams(window.location.search).get("invite");
+    var urlParams = new URLSearchParams(window.location.search);
+    var inviteParam = urlParams.get("invite");
     if (inviteParam) {
       enterViaInviteLink(inviteParam);
+      return;
+    }
+    var joinParam = urlParams.get("join");
+    if (joinParam) {
+      enterViaJoinLink(joinParam);
       return;
     }
 

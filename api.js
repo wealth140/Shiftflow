@@ -115,6 +115,8 @@ window.ShiftFlowAPI = (function () {
     checkBackend: checkBackend,
     setInviteToken: function (token) { inviteToken = token || null; },
     getState: function () { return get("/state"); },
+    getJoinInfo: function (orgId) { return get("/join-info?org=" + encodeURIComponent(orgId)); },
+    joinOrg: function (payload) { return post("/join", payload); },
     setOrg: function (orgType) { return post("/org", { orgType: orgType }); },
     setScheduleConfig: function (cfg) { return post("/schedule-config", cfg || {}); },
     addWorker: function (worker) { return post("/workers", worker); },
