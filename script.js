@@ -1840,6 +1840,7 @@
     }
     workerLoginGate.hidden = true;
     if (adminAuthGate) adminAuthGate.hidden = true;
+    if (joinGate) joinGate.hidden = true;
     appEl.hidden = true;
     workerShell.hidden = true;
     updateToggleSurface();
@@ -1847,8 +1848,10 @@
   function enterAdmin() {
     accessMode = "admin";
     roleGate.hidden = true;
+    orgGate.classList.add("is-hidden");
     workerLoginGate.hidden = true;
     if (adminAuthGate) adminAuthGate.hidden = true;
+    if (joinGate) joinGate.hidden = true;
     appEl.hidden = false;
     workerShell.hidden = true;
     var multiTenantActive = !!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured());
@@ -2075,6 +2078,15 @@
   function enterWorkerApp(worker) {
     accessMode = "worker";
     currentWorker = worker;
+    // Every gate gets hidden here, not just the one the caller happened to
+    // come from — enterViaInviteLink forgetting orgGate, then
+    // enterViaJoinLink separately forgetting joinGate, were two versions
+    // of the same mistake: a fixed, full-screen gate left showing on top
+    // of a worker view that had actually loaded correctly underneath it.
+    roleGate.hidden = true;
+    orgGate.classList.add("is-hidden");
+    if (adminAuthGate) adminAuthGate.hidden = true;
+    if (joinGate) joinGate.hidden = true;
     workerLoginGate.hidden = true;
     appEl.hidden = true;
     workerShell.hidden = false;
