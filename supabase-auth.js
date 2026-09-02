@@ -69,6 +69,20 @@ window.ShiftFlowAuth = (function () {
     });
   }
 
+  // For the "I signed up, never got the email, now what" moment — the
+  // single most stressful point in this flow — rather than making someone
+  // re-enter their password and get a confusing "already registered" error.
+  function resendConfirmation(email) {
+    if (!client) return Promise.resolve({ error: "This deployment doesn't have admin sign-in configured." });
+    return client.auth.resend({
+      type: "signup",
+      email: email,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+    }).then(function (r) {
+      return { error: r.error ? r.error.message : null };
+    });
+  }
+
   function signOut() {
     if (!client) return Promise.resolve();
     return client.auth.signOut();
@@ -96,6 +110,7 @@ window.ShiftFlowAuth = (function () {
     getAccessToken: getAccessToken,
     signInWithPassword: signInWithPassword,
     signUp: signUp,
+    resendConfirmation: resendConfirmation,
     signOut: signOut,
     onAuthChange: onAuthChange,
     uploadToSignedUrl: uploadToSignedUrl

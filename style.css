@@ -93,13 +93,27 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
 /* ---- Org type gate ---- */
 .gate{
   position: fixed; inset: 0; z-index: 200;
-  background: var(--brand-ink);
-  display: flex; align-items: safe center; justify-content: center;
+  background:
+    radial-gradient(560px circle at 18% -10%, rgba(235,163,59,0.16), transparent 60%),
+    radial-gradient(620px circle at 100% 110%, rgba(31,111,114,0.22), transparent 55%),
+    var(--brand-ink);
+  display: flex;
   padding: 32px;
   overflow-y: auto;
 }
 .gate.is-hidden{ display: none; }
-.gate-inner{ max-width: 720px; width: 100%; text-align: center; }
+.gate-brand{ display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 28px; font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; color: var(--brand-text); }
+.gate-brand-icon{ width: 20px; height: 20px; fill: var(--amber); stroke: none; flex-shrink: 0; }
+@media (max-width: 460px){
+  .gate-brand{ margin-bottom: 18px; }
+}
+/* margin:auto on the child, not align-items/justify-content on the parent,
+   is what actually centers content while still scrolling to its top when
+   it's taller than the screen — align-items:center (even with the "safe"
+   keyword) clips both ends on browsers that don't honor "safe" (notably
+   Safari/iOS), which is exactly what made the org picker's top get cut
+   off on phones. */
+.gate-inner{ max-width: 720px; width: 100%; margin: auto; text-align: center; }
 .gate-back-btn{
   position: absolute;
   top: 24px; left: 24px;
@@ -141,7 +155,7 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
 }
 @media (max-width: 460px){
   .gate-grid{ grid-template-columns: 1fr; gap: 8px; }
-  .gate{ padding: 20px 16px; align-items: flex-start; }
+  .gate{ padding: 20px 16px; }
   .gate-inner{ padding-top: 12px; }
   .gate-sub{ margin-bottom: 20px; }
   .gate-card{ padding: 14px; }
@@ -158,6 +172,7 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
 .login-or-divider{ font-size: 0.72rem; color: var(--brand-text-dim); text-align: center; text-transform: uppercase; letter-spacing: 0.06em; margin: -6px 0; }
 .link-btn{ background: none; border: none; cursor: pointer; width: 100%; text-align: center; font-size: 0.82rem; color: var(--teal); padding: 4px; }
 .link-btn:hover{ text-decoration: underline; }
+.link-btn-inline{ background: none; border: none; cursor: pointer; display: inline; padding: 0; font-size: inherit; color: var(--teal); text-decoration: underline; }
 .worker-login-form select, .worker-login-form input{
   border: 1px solid rgba(255,255,255,0.15);
   background: rgba(255,255,255,0.05);
@@ -480,6 +495,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .chat-input-row{ display: flex; gap: 10px; padding: 14px; border-top: 1px solid var(--line); }
 .chat-input-row input{ flex: 1; border: 1px solid var(--line); border-radius: 999px; padding: 11px 18px; font-size: 0.88rem; background: var(--paper); color: var(--ink); }
 .chat-input-row input:focus{ outline: none; border-color: var(--teal); }
+.chat-input-row input::placeholder{ color: var(--slate-2); opacity: 1; }
 .chat-input-row .btn{ padding: 0; width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; }
 .chat-input-row .btn svg{ width: 17px; height: 17px; }
 .chat-attach-btn{
@@ -651,6 +667,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .chat-widget-input{ display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--paper-2); }
 .chat-widget-input input{ flex: 1; border: 1px solid var(--line); border-radius: 999px; padding: 9px 14px; font-size: 0.84rem; background: var(--paper); color: var(--ink); }
 .chat-widget-input input:focus{ outline: none; border-color: var(--teal); }
+.chat-widget-input input::placeholder{ color: var(--slate-2); opacity: 1; }
 .chat-widget-input button{ width: 36px; height: 36px; border-radius: 50%; background: var(--teal); color: var(--on-accent); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .chat-widget-input button:hover{ background: var(--teal-2); }
 .chat-widget-input button svg{ width: 15px; height: 15px; }

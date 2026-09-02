@@ -160,6 +160,19 @@
     });
   }
 
+  // Every gate (org picker, role picker, admin sign-in, join, worker
+  // sign-in) shared the same problem: a wall of empty space above the
+  // "ACCESS"-style eyebrow before anything told you what app you were
+  // even looking at. One brand mark, injected into all of them here
+  // instead of five separate copy-pasted HTML blocks.
+  function addGateBranding() {
+    $all(".gate-inner").forEach(function (inner) {
+      var brand = el("div", "gate-brand", "<svg class='gate-brand-icon' viewBox='0 0 24 24'><path d='M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z'/></svg><span>SwiftFlow</span>");
+      inner.insertBefore(brand, inner.firstChild);
+    });
+  }
+  addGateBranding();
+
   function selectOrg(key) {
     state.orgType = key;
     state.scheduleDays = [];
@@ -1444,6 +1457,10 @@
     }).catch(function () {});
   }
   if (!reduceMotion) window.setInterval(pollBackend, 5000);
+  // Catches the case where a worker opens the app, doesn't clock in right
+  // away, and leaves the tab open — re-checks periodically rather than
+  // only once on entry.
+  window.setInterval(checkShiftReminder, 10 * 60 * 1000);
 
   /* ---------------------------------------------
      10. Announcements
@@ -1868,6 +1885,23 @@
     var raw = question.trim();
     var lower = raw.toLowerCase();
 
+    // A little small talk before falling through to commands — answering
+    // "hi" with "I didn't catch a command there" is exactly the kind of
+    // thing that makes an assistant feel unhelpful even when the actual
+    // commands underneath it work fine.
+    if (/^(hi|hello|hey|yo|sup)[!.\s]*$/.test(lower)) {
+      return accessMode === "worker" ? "Hey" + (currentWorker ? " " + currentWorker.name.split(" ")[0] : "") + "! Ask me about your shifts, or say \"clock me in\"." : "Hey! Ask me to add a worker, check who's on shift, or type \"help\" for the full list.";
+    }
+    if (/^(good\s?morning|good\s?afternoon|good\s?evening)[!.\s]*$/.test(lower)) {
+      return "Right back at you. What do you need?";
+    }
+    if (/\b(thanks|thank you|thx|cheers|appreciate it)\b/.test(lower)) {
+      return "Anytime.";
+    }
+    if (/how('s| is| are) (it going|things|you)/.test(lower)) {
+      return "Running smoothly on my end — how can I help?";
+    }
+
     // Try to execute a real action first, scoped to who's logged in.
     var actionResult = null;
     if (accessMode === "admin") actionResult = tryAdminCommand(raw, lower);
@@ -1886,7 +1920,12 @@
     if (lower.indexOf("team") !== -1 || lower.indexOf("worker") !== -1) {
       return team.length === 0 ? "Your roster is empty — add your first worker from the Team tab." : ("You have " + team.length + " people on the roster.");
     }
-    return "I didn't catch a command there. Type \"help\" to see what I can do.";
+    // A generic "I didn't understand" is a dead end — give the closest
+    // couple of things it does understand instead, so the miss is still
+    // useful.
+    return accessMode === "worker"
+      ? "I didn't catch that. Try \"clock me in\", \"my shifts\", or \"request a swap\" — or type \"help\" for everything."
+      : "I didn't catch that. Try \"add worker Sam as Usher\", \"who's on shift\", or \"auto-assign open shifts\" — or type \"help\" for everything.";
   }
 
   function sendWidgetMessage() {
@@ -2038,7 +2077,30 @@
     msg.textContent = "Working on it…";
     var action = adminAuthMode === "signup" ? window.ShiftFlowAuth.signUp : window.ShiftFlowAuth.signInWithPassword;
     action(email, password).then(function (result) {
-      if (result.error) { msg.textContent = result.error; return; }
+      if (result.error) {
+        // The single most stressful moment in this whole flow: signed up,
+        // never saw the email (or it's sitting in spam), now sign-in just
+        // fails with no obvious next step. Give them one right here
+        // instead of sending them hunting for a "resend" option that
+        // doesn't otherwise exist anywhere in the UI.
+        if (/not confirmed/i.test(result.error) && adminAuthMode === "signin") {
+          msg.innerHTML = "";
+          msg.appendChild(document.createTextNode("Confirm your email first — check your inbox, or "));
+          var resendBtn = el("button", "link-btn-inline", "resend the confirmation email");
+          resendBtn.type = "button";
+          resendBtn.addEventListener("click", function () {
+            msg.textContent = "Sending…";
+            window.ShiftFlowAuth.resendConfirmation(email).then(function (r) {
+              msg.textContent = r.error || "Sent — check your inbox (and spam folder).";
+            });
+          });
+          msg.appendChild(resendBtn);
+          msg.appendChild(document.createTextNode("."));
+          return;
+        }
+        msg.textContent = result.error;
+        return;
+      }
       if (result.needsConfirmation) { msg.textContent = "Account created — check your email to confirm it, then sign in."; adminAuthMode = "signin"; renderAdminAuthMode(); return; }
       var wasSignup = adminAuthMode === "signup";
       checkAdminOrgAndEnter();
@@ -2179,6 +2241,35 @@
     workerLoginGate.hidden = false;
     updateToggleSurface();
   }
+  // The schedule only tracks day + duty, not a time of day, so "alert them
+  // when they're on shift" is scoped to what that data actually supports:
+  // today is one of their scheduled days and they haven't clocked in yet.
+  // Church mode has no per-calendar-day mapping (services aren't tied to
+  // a specific date), so this only applies to grid-mode orgs.
+  var shiftReminderShownFor = null;
+  function checkShiftReminder() {
+    if (accessMode !== "worker" || !currentWorker) return;
+    var cfg = orgConfig();
+    if (cfg.mode === "church") return;
+    var todayKey = WEEKDAY_KEYS[new Date().getDay()];
+    var todaysDuty = duties[currentWorker.id] && duties[currentWorker.id][todayKey];
+    if (!todaysDuty || todaysDuty === "Off" || workerClockedIn) return;
+    var reminderKey = currentWorker.id + "-" + todayKey;
+    if (shiftReminderShownFor === reminderKey) return;
+    shiftReminderShownFor = reminderKey;
+    var message = "You're scheduled for " + todaysDuty + " today — don't forget to clock in.";
+    showToast(message);
+    if (window.Notification) {
+      if (Notification.permission === "granted") {
+        new Notification("SwiftFlow", { body: message });
+      } else if (Notification.permission === "default") {
+        Notification.requestPermission().then(function (perm) {
+          if (perm === "granted") new Notification("SwiftFlow", { body: message });
+        });
+      }
+    }
+  }
+
   function enterWorkerApp(worker) {
     accessMode = "worker";
     currentWorker = worker;
@@ -2201,6 +2292,7 @@
     renderWorkerSwapList();
     renderChatThread();
     renderWorkerAnnouncements();
+    checkShiftReminder();
   }
 
   if (roleWorkerBtn) roleWorkerBtn.addEventListener("click", enterWorkerLogin);
