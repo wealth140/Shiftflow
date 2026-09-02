@@ -16,15 +16,15 @@
   })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ShiftFlow — Dashboard</title>
+<title>SwiftFlow — Dashboard</title>
 <meta name="description" content="Shift scheduling, duty rotation, swaps, attendance and team chat — restructured around whatever you run, from a restaurant's weekly grid to a church's Sunday service lineup.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2312203D'/%3E%3Cpath d='M6 9a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z' fill='none' stroke='%231F6F72' stroke-width='1.8'/%3E%3Cpath d='M9 11h6M9 14h4' stroke='%23EBA33B' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2312203D'/%3E%3Cpath d='M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z' fill='%23EBA33B' stroke='%23EBA33B' stroke-width='1' stroke-linejoin='round'/%3E%3C/svg%3E">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#12203D">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="ShiftFlow">
+<meta name="apple-mobile-web-app-title" content="SwiftFlow">
 <!-- If you host this frontend separately from server.js (e.g. GitHub Pages
      for the static files, a Node host like Render/Railway for the backend),
      uncomment and set this to your backend's URL before api.js loads:
@@ -52,7 +52,7 @@
   <div class="gate-inner">
     <p class="gate-eyebrow">Before we start</p>
     <h1 class="gate-title">What are you scheduling for?</h1>
-    <p class="gate-sub">ShiftFlow restructures itself around what you run — a church's Sunday service lineup looks nothing like a restaurant's weekly shift grid.</p>
+    <p class="gate-sub">SwiftFlow restructures itself around what you run — a church's Sunday service lineup looks nothing like a restaurant's weekly shift grid.</p>
     <div class="gate-grid" id="gateGrid"></div>
   </div>
 </div>
@@ -61,7 +61,7 @@
 <div class="gate" id="roleGate" hidden>
   <div class="gate-inner">
     <p class="gate-eyebrow">Access</p>
-    <h1 class="gate-title">How are you using ShiftFlow?</h1>
+    <h1 class="gate-title">How are you using SwiftFlow?</h1>
     <p class="gate-sub">Admins manage the whole schedule and team. Workers see just their own shifts, clock in, and can request coverage.</p>
     <div class="gate-grid role-gate-grid">
       <button class="gate-card" id="roleAdminBtn">
@@ -166,7 +166,7 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
-      <span class="sidebar-logo">ShiftFlow</span>
+      <span class="sidebar-logo"><svg class="sidebar-logo-icon" viewBox="0 0 24 24"><path d="M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z"/></svg>SwiftFlow</span>
       <button class="sidebar-close" id="sidebarClose" aria-label="Close menu">
         <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
       </button>
@@ -372,11 +372,16 @@
           <div class="chat-thread-wrap">
             <div class="chat-thread" id="chatThread"></div>
             <form class="chat-input-row" id="chatForm">
+              <button type="button" id="chatAttachBtn" class="chat-attach-btn" aria-label="Attach a photo or video">
+                <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <input type="file" id="chatMediaInput" accept="image/*,video/*" hidden>
               <input type="text" id="chatInput" placeholder="Message the team..." autocomplete="off">
               <button type="button" id="chatSendBtn" class="btn btn-primary" aria-label="Send">
                 <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/><path d="M20 4L14 20l-3-7-7-3z"/></svg>
               </button>
             </form>
+            <p class="field-hint chat-upload-status" id="chatUploadStatus" hidden></p>
           </div>
         </div>
       </section>
@@ -476,7 +481,7 @@
 <!-- ============ WORKER APP SHELL ============ -->
 <div class="worker-shell" id="workerShell" hidden>
   <header class="worker-topbar">
-    <span class="worker-topbar-logo">ShiftFlow</span>
+    <span class="worker-topbar-logo"><svg class="sidebar-logo-icon" viewBox="0 0 24 24"><path d="M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z"/></svg>SwiftFlow</span>
     <div class="worker-topbar-right">
       <span class="worker-name" id="workerAppName"></span>
       <button class="btn btn-ghost btn-sm" id="workerLogoutBtn">Log out</button>
@@ -535,11 +540,16 @@
         <div class="chat-thread-wrap">
           <div class="chat-thread" id="workerChatThread"></div>
           <div class="chat-input-row">
+            <button type="button" id="workerChatAttachBtn" class="chat-attach-btn" aria-label="Attach a photo or video">
+              <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+            <input type="file" id="workerChatMediaInput" accept="image/*,video/*" hidden>
             <input type="text" id="workerChatInput" placeholder="Message the team..." autocomplete="off">
             <button type="button" class="btn btn-primary" id="workerChatSendBtn" aria-label="Send">
               <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/><path d="M20 4L14 20l-3-7-7-3z"/></svg>
             </button>
           </div>
+          <p class="field-hint chat-upload-status" id="workerChatUploadStatus" hidden></p>
         </div>
       </div>
     </section>
@@ -558,7 +568,7 @@
   <svg class="icon-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
 </button>
 
-<button class="chat-fab" id="chatFab" aria-label="Open ShiftFlow assistant">
+<button class="chat-fab" id="chatFab" aria-label="Open SwiftFlow assistant">
   <svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9L4 20.5z"/></svg>
   <span class="fab-badge" id="fabBadge" hidden>0</span>
 </button>
@@ -566,7 +576,7 @@
 <div class="chat-widget" id="chatWidget">
   <div class="chat-widget-head">
     <div>
-      <p class="chat-widget-title">ShiftFlow Assistant</p>
+      <p class="chat-widget-title">SwiftFlow Assistant</p>
       <p class="chat-widget-sub"><span class="live-dot"></span>Live</p>
     </div>
     <button class="chat-widget-close" id="chatWidgetClose" aria-label="Close">
@@ -575,7 +585,7 @@
   </div>
   <div class="chat-widget-body" id="chatWidgetBody"></div>
   <form class="chat-widget-input" id="chatWidgetForm">
-    <input type="text" id="chatWidgetInput" placeholder="Ask ShiftFlow...">
+    <input type="text" id="chatWidgetInput" placeholder="Ask SwiftFlow...">
     <button type="button" id="chatWidgetSendBtn" aria-label="Send">
       <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/><path d="M20 4L14 20l-3-7-7-3z"/></svg>
     </button>

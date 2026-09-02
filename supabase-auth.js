@@ -1,5 +1,5 @@
 /* ================================================
-   ShiftFlow — admin authentication (optional)
+   SwiftFlow — admin authentication (optional)
 
    Only does anything when window.SHIFTFLOW_SUPABASE_URL and
    window.SHIFTFLOW_SUPABASE_ANON_KEY are set (see index.html and the
@@ -79,6 +79,17 @@ window.ShiftFlowAuth = (function () {
     client.auth.onAuthStateChange(function (_event, session) { callback(session); });
   }
 
+  // Uploads straight to Supabase Storage using a one-time signed URL the
+  // backend handed out (see api/router.js's /chat-media-upload-url) — the
+  // token itself is the authorization, so this works whether the caller
+  // is a signed-in admin or a worker with no Supabase account at all.
+  function uploadToSignedUrl(path, token, file) {
+    if (!client) return Promise.resolve({ error: "This deployment doesn't have media uploads configured." });
+    return client.storage.from("chat-media").uploadToSignedUrl(path, token, file).then(function (r) {
+      return { error: r.error ? r.error.message : null };
+    });
+  }
+
   return {
     isConfigured: isConfigured,
     getSession: getSession,
@@ -86,6 +97,7 @@ window.ShiftFlowAuth = (function () {
     signInWithPassword: signInWithPassword,
     signUp: signUp,
     signOut: signOut,
-    onAuthChange: onAuthChange
+    onAuthChange: onAuthChange,
+    uploadToSignedUrl: uploadToSignedUrl
   };
 })();

@@ -1,5 +1,5 @@
 /* ================================================
-   ShiftFlow — production API (Vercel + Supabase), multi-tenant
+   SwiftFlow — production API (Vercel + Supabase), multi-tenant
 
    Every admin gets their own organization (their own team, schedule,
    swaps, attendance, chat, announcements) — completely separate from
@@ -39,7 +39,7 @@ const crypto = require("crypto");
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const EMAIL_FROM = process.env.EMAIL_FROM || "ShiftFlow <onboarding@resend.dev>";
+const EMAIL_FROM = process.env.EMAIL_FROM || "SwiftFlow <onboarding@resend.dev>";
 
 var DEFAULT_ORG_DATA = {
   orgType: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
@@ -308,8 +308,8 @@ module.exports = async function handler(req, res) {
 
       var appUrl = req.headers.origin || ("https://" + req.headers.host);
       var inviteLink = appUrl + "/?invite=" + inviteWorker.token;
-      var subject = "Your ShiftFlow sign-in";
-      var text = "You're on the ShiftFlow schedule as " + inviteWorker.name + " (" + inviteWorker.role + ").\n" +
+      var subject = "Your SwiftFlow sign-in";
+      var text = "You're on the SwiftFlow schedule as " + inviteWorker.name + " (" + inviteWorker.role + ").\n" +
         "Open your personal link to see your shifts and clock in: " + inviteLink;
 
       var result = await sendInviteEmail(inviteWorker.email, subject, text);
@@ -413,6 +413,23 @@ module.exports = async function handler(req, res) {
       data.attendance.unshift(aBody);
       await saveOrg(orgId, data);
       return sendJson(200, aBody);
+    }
+
+    // Chat media (photos/videos): the client uploads the actual file bytes
+    // straight to Supabase Storage using the signed URL this hands back —
+    // never through this function — so a phone video doesn't have to fit
+    // inside a serverless function's request body limit. The signed token
+    // is itself the one-time authorization, scoped to this exact path
+    // (<orgId>/<random>-<filename>), so this works the same for an
+    // unauthenticated worker (invite token) as it does for an admin.
+    if (resource === "chat-media-upload-url" && req.method === "POST") {
+      var mediaBody = await readBody(req);
+      var rawName = String(mediaBody.filename || "file").replace(/[^a-zA-Z0-9_.-]/g, "_").slice(-80);
+      var mediaPath = orgId + "/" + crypto.randomBytes(8).toString("hex") + "-" + rawName;
+      const { data: signed, error: signErr } = await supabase.storage.from("chat-media").createSignedUploadUrl(mediaPath);
+      if (signErr) return sendJson(500, { error: signErr.message });
+      const { data: pub } = supabase.storage.from("chat-media").getPublicUrl(mediaPath);
+      return sendJson(200, { path: mediaPath, token: signed.token, publicUrl: pub.publicUrl });
     }
 
     // Shared channel — both admin and worker post here.

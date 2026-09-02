@@ -1,5 +1,5 @@
 /* ================================================
-   ShiftFlow — API data layer
+   SwiftFlow — API data layer
    If server.js is running (node server.js), this talks
    to the real backend and every change is saved to disk.
    If there's no backend reachable (e.g. this file opened
@@ -131,6 +131,7 @@ window.ShiftFlowAPI = (function () {
     requestSwap: function (swap) { return post("/swaps", swap); },
     logAttendance: function (entry) { return post("/attendance", entry); },
     postChatMessage: function (channel, message) { return post("/chat/" + channel, message); },
+    getChatMediaUploadUrl: function (filename) { return post("/chat-media-upload-url", { filename: filename }); },
     addAnnouncement: function (announcement) { return post("/announcements", announcement); }
   };
 })();

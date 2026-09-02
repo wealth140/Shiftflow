@@ -1,4 +1,4 @@
-# ShiftFlow
+# SwiftFlow
 
 A shift-scheduling app for businesses, churches, hospitals, schools, hotels,
 restaurants, security companies and volunteer teams — with duty rotation,
@@ -92,10 +92,10 @@ someone else gets none. It only ever fills gaps — anything you've already
 assigned by hand is left untouched, and any slot nobody's qualified for is
 left open for you to sort out manually.
 
-## How workers get into ShiftFlow
+## How workers get into SwiftFlow
 
 There's no separate app to install — workers use the same URL you do. Every
-visit now starts by asking **"How are you using ShiftFlow?"**: Admin, or
+visit now starts by asking **"How are you using SwiftFlow?"**: Admin, or
 "I'm a worker."
 
 - **Admin** goes straight into the full dashboard (everything described
@@ -125,7 +125,7 @@ someone actually trying to get in, treat that as a follow-up project, not
 something this build claims to solve.
 
 **Getting workers there in practice:** since the whole thing is one URL,
-put ShiftFlow behind real hosting (see "Hosting the frontend and backend
+put SwiftFlow behind real hosting (see "Hosting the frontend and backend
 separately" below for GitHub Pages + a backend host) and text or email
 that link to your team. On a phone, "Add to Home Screen" from the browser
 share menu makes it open like an app icon without any install step.

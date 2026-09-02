@@ -1,5 +1,5 @@
 /* ================================================
-   ShiftFlow — app logic (vanilla JS, no dependencies)
+   SwiftFlow — app logic (vanilla JS, no dependencies)
    State starts empty — you build the roster and
    schedule yourself. Backend data (if server.js is
    running) is the source of truth; otherwise state
@@ -250,7 +250,7 @@
       v.classList.toggle("is-active", match);
     });
     navBtns.forEach(function (b) { b.classList.toggle("is-active", b.dataset.view === name); });
-    topbarTitle.textContent = name === "schedule" ? $("#navScheduleLabel").textContent : (VIEW_TITLES[name] || "ShiftFlow");
+    topbarTitle.textContent = name === "schedule" ? $("#navScheduleLabel").textContent : (VIEW_TITLES[name] || "SwiftFlow");
     closeSidebar();
   }
   navBtns.forEach(function (btn) {
@@ -398,10 +398,10 @@
   function inviteMessage(worker) {
     var url = window.location.origin + window.location.pathname;
     if (worker.token) {
-      return "You're on the ShiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
+      return "You're on the SwiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
         "Open your personal link to see your shifts and clock in: " + url + "?invite=" + worker.token;
     }
-    return "You're on the ShiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
+    return "You're on the SwiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
       "Open " + url + ", choose \"I'm a worker,\" pick your name, and sign in with this PIN: " + worker.pin;
   }
 
@@ -438,13 +438,13 @@
         showToast("Invite emailed to " + worker.email + ".");
         return;
       }
-      var subject = "Your ShiftFlow sign-in";
+      var subject = "Your SwiftFlow sign-in";
       var body = inviteMessage(worker);
       var mailto = "mailto:" + encodeURIComponent(worker.email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
       window.location.href = mailto;
       markInvited(worker);
     }).catch(function () {
-      var subject = "Your ShiftFlow sign-in";
+      var subject = "Your SwiftFlow sign-in";
       var body = inviteMessage(worker);
       var mailto = "mailto:" + encodeURIComponent(worker.email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
       window.location.href = mailto;
@@ -1203,10 +1203,71 @@
   var chatInput = $("#chatInput");
   var chatSendBtn = $("#chatSendBtn");
 
+  // Copy/Share/Save act on the media link when there is one, otherwise the
+  // message text — covers a plain message ("copy" grabs the words) and a
+  // shared photo/video ("save" downloads it, "share" hands it to whatever
+  // the OS share sheet offers) with the same three buttons either way.
+  function copyChatContent(msg) {
+    var text = msg.mediaUrl || msg.text || "";
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { showToast("Copied."); }, function () { window.prompt("Copy:", text); });
+    } else {
+      window.prompt("Copy:", text);
+    }
+  }
+  function shareChatContent(msg) {
+    if (navigator.share) {
+      navigator.share(msg.mediaUrl ? { url: msg.mediaUrl, text: msg.text || undefined } : { text: msg.text }).catch(function () {});
+    } else {
+      copyChatContent(msg);
+      showToast("Sharing isn't available here — copied instead.");
+    }
+  }
+  function saveChatMedia(url) {
+    fetch(url).then(function (r) { return r.blob(); }).then(function (blob) {
+      var blobUrl = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = url.split("/").pop().split("?")[0] || "shiftflow-media";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }).catch(function () { window.open(url, "_blank"); });
+  }
   function renderChatMessage(container, msg) {
     var wrap = el("div", "chat-msg" + (msg.me ? " is-me" : "") + (msg.system ? " is-system" : ""));
     if (!msg.me) wrap.appendChild(el("span", "avatar", initials(msg.name)));
-    wrap.appendChild(el("div", "", "<p class='chat-msg-name'>" + escapeHtml(msg.name) + "</p><div class='chat-msg-bubble'>" + escapeHtml(msg.text) + "</div><p class='chat-msg-time'>" + msg.time + "</p>"));
+    var body = el("div", "", "<p class='chat-msg-name'>" + escapeHtml(msg.name) + "</p><div class='chat-msg-bubble'>" + (msg.text ? escapeHtml(msg.text) : "") + "</div><p class='chat-msg-time'>" + msg.time + "</p>");
+    if (msg.mediaUrl) {
+      var media = el("div", "chat-msg-media");
+      var isVideo = (msg.mediaType || "").indexOf("video/") === 0;
+      var el2 = document.createElement(isVideo ? "video" : "img");
+      if (isVideo) { el2.controls = true; } else { el2.alt = "Shared photo"; }
+      el2.src = msg.mediaUrl;
+      media.appendChild(el2);
+      body.querySelector(".chat-msg-bubble").appendChild(media);
+    }
+    if (!msg.system) {
+      var actions = el("div", "chat-msg-actions");
+      var copyBtn = el("button", "chat-msg-action", "<svg viewBox='0 0 24 24'><rect x='9' y='9' width='12' height='12' rx='2'/><path d='M5 15V5a2 2 0 0 1 2-2h10'/></svg>");
+      copyBtn.type = "button"; copyBtn.setAttribute("aria-label", "Copy");
+      copyBtn.addEventListener("click", function () { copyChatContent(msg); });
+      actions.appendChild(copyBtn);
+      var shareBtn = el("button", "chat-msg-action", "<svg viewBox='0 0 24 24'><circle cx='18' cy='5' r='2.5'/><circle cx='6' cy='12' r='2.5'/><circle cx='18' cy='19' r='2.5'/><path d='M8.2 10.7l7.6-4.4M8.2 13.3l7.6 4.4'/></svg>");
+      shareBtn.type = "button"; shareBtn.setAttribute("aria-label", "Share");
+      shareBtn.addEventListener("click", function () { shareChatContent(msg); });
+      actions.appendChild(shareBtn);
+      if (msg.mediaUrl) {
+        var saveBtn = el("button", "chat-msg-action", "<svg viewBox='0 0 24 24'><path d='M12 3v12M7 10l5 5 5-5'/><path d='M5 19h14'/></svg>");
+        saveBtn.type = "button"; saveBtn.setAttribute("aria-label", "Save");
+        saveBtn.addEventListener("click", function () { saveChatMedia(msg.mediaUrl); });
+        actions.appendChild(saveBtn);
+      }
+      body.appendChild(actions);
+    }
+    wrap.appendChild(body);
     container.appendChild(wrap);
   }
 
@@ -1260,6 +1321,49 @@
   var workerChatSendBtn = $("#workerChatSendBtn");
   if (workerChatSendBtn) workerChatSendBtn.addEventListener("click", function () { sendChatMessageFrom(workerChatInput); });
   if (workerChatInput) workerChatInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); sendChatMessageFrom(workerChatInput); } });
+
+  // Photos/videos in chat: the file goes straight from the browser to
+  // Supabase Storage via a one-time signed URL (see api/router.js and
+  // supabase-auth.js) — never through our own backend — so this works for
+  // videos too, not just small images a serverless function could accept
+  // in a request body. Only available on the real multi-tenant deployment;
+  // local dev (server.js) has no storage backing at all.
+  var MAX_MEDIA_MB = 10;
+  function uploadAndSendMedia(file, statusEl) {
+    if (!file) return;
+    if (!/^image\/|^video\//.test(file.type)) { statusEl.hidden = false; statusEl.textContent = "Only photos and videos are supported."; return; }
+    if (file.size > MAX_MEDIA_MB * 1024 * 1024) { statusEl.hidden = false; statusEl.textContent = "Keep it under " + MAX_MEDIA_MB + "MB."; return; }
+    statusEl.hidden = false;
+    statusEl.textContent = "Uploading " + file.name + "…";
+    ShiftFlowAPI.getChatMediaUploadUrl(file.name).then(function (result) {
+      if (!result || !result.token) { statusEl.textContent = "Couldn't start the upload — try again."; return; }
+      return window.ShiftFlowAuth.uploadToSignedUrl(result.path, result.token, file).then(function (uploaded) {
+        if (uploaded.error) { statusEl.textContent = "Upload failed: " + uploaded.error; return; }
+        var senderName = (accessMode === "worker" && currentWorker) ? currentWorker.name : "You";
+        var msg = { name: senderName, me: true, text: "", time: timeNow(), mediaUrl: result.publicUrl, mediaType: file.type };
+        addChatMessage(currentChannel, msg);
+        ShiftFlowAPI.postChatMessage(currentChannel, msg).catch(function () {});
+        statusEl.hidden = true;
+      });
+    }).catch(function () {
+      statusEl.textContent = "Couldn't reach the server — try again.";
+    });
+  }
+  function wireChatAttach(attachBtnId, fileInputId, statusElId) {
+    var attachBtn = $("#" + attachBtnId);
+    var fileInput = $("#" + fileInputId);
+    var statusEl = $("#" + statusElId);
+    if (!attachBtn || !fileInput || !statusEl) return;
+    if (!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured())) { attachBtn.hidden = true; return; }
+    attachBtn.addEventListener("click", function () { fileInput.click(); });
+    fileInput.addEventListener("change", function () {
+      var file = fileInput.files && fileInput.files[0];
+      fileInput.value = "";
+      uploadAndSendMedia(file, statusEl);
+    });
+  }
+  wireChatAttach("chatAttachBtn", "chatMediaInput", "chatUploadStatus");
+  wireChatAttach("workerChatAttachBtn", "workerChatMediaInput", "workerChatUploadStatus");
 
   // Poll the backend for new messages from other sessions, so chat actually
   // synchronizes across anyone using the same server — not just this tab.
@@ -1484,7 +1588,7 @@
   var chatWidgetSendBtn = $("#chatWidgetSendBtn");
 
   var widgetMessages = [
-    { text: "Hi — I'm your ShiftFlow assistant. I can answer questions, and I can also do things for you. Try \"help\" to see what I can run.", me: false, time: timeNow() }
+    { text: "Hi — I'm your SwiftFlow assistant. I can answer questions, and I can also do things for you. Try \"help\" to see what I can run.", me: false, time: timeNow() }
   ];
   var unreadCount = 0;
 
@@ -1938,7 +2042,7 @@
       if (result.needsConfirmation) { msg.textContent = "Account created — check your email to confirm it, then sign in."; adminAuthMode = "signin"; renderAdminAuthMode(); return; }
       var wasSignup = adminAuthMode === "signup";
       checkAdminOrgAndEnter();
-      showToast(wasSignup ? "Account created — welcome to ShiftFlow." : "Signed in.");
+      showToast(wasSignup ? "Account created — welcome to SwiftFlow." : "Signed in.");
     });
   }
 

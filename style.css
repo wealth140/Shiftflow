@@ -1,5 +1,5 @@
 /* ================================================
-   ShiftFlow app — design tokens
+   SwiftFlow app — design tokens
    Two groups: theme-aware (--ink, --paper, --paper-2,
    --slate, --slate-2, --line, *-tint) flip inside
    [data-theme="dark"] below. Fixed brand tokens
@@ -200,7 +200,11 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
   font-weight: 700;
   font-size: 1.15rem;
   color: var(--brand-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
+.sidebar-logo-icon{ width: 18px; height: 18px; fill: var(--amber); stroke: none; flex-shrink: 0; }
 .sidebar-close{ display: none; color: var(--brand-text); }
 .sidebar-close svg{ width: 20px; height: 20px; }
 
@@ -478,6 +482,22 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .chat-input-row input:focus{ outline: none; border-color: var(--teal); }
 .chat-input-row .btn{ padding: 0; width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; }
 .chat-input-row .btn svg{ width: 17px; height: 17px; }
+.chat-attach-btn{
+  width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0;
+  background: var(--paper); border: 1px solid var(--line); color: var(--slate);
+  display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.chat-attach-btn:hover{ border-color: var(--teal); color: var(--teal); }
+.chat-attach-btn svg{ width: 18px; height: 18px; }
+.chat-upload-status{ padding: 0 14px 10px; margin-top: -6px; }
+.chat-msg-media{ max-width: 260px; border-radius: 12px; display: block; margin-top: 6px; }
+.chat-msg-media img, .chat-msg-media video{ width: 100%; border-radius: 12px; display: block; }
+.chat-msg-actions{ display: flex; gap: 4px; margin-top: 4px; }
+.chat-msg.is-me .chat-msg-actions{ justify-content: flex-end; }
+.chat-msg-action{ width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--slate-2); display: flex; align-items: center; justify-content: center; opacity: 0.6; transition: opacity 0.15s ease, background 0.15s ease; }
+.chat-msg-action:hover{ opacity: 1; background: var(--paper); }
+.chat-msg-action svg{ width: 13px; height: 13px; }
 
 /* ================= Announcements ================= */
 .announce-list{ display: flex; flex-direction: column; gap: 14px; }
@@ -645,7 +665,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
   border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 40;
 }
-.worker-topbar-logo{ font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; }
+.worker-topbar-logo{ font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; display: inline-flex; align-items: center; gap: 6px; }
 .worker-topbar-right{ display: flex; align-items: center; gap: 14px; margin-right: 48px; }
 .worker-name{ font-size: 0.86rem; font-weight: 600; color: var(--slate); }
 
