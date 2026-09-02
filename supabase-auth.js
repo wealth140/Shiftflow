@@ -83,6 +83,25 @@ window.ShiftFlowAuth = (function () {
     });
   }
 
+  function resetPasswordForEmail(email) {
+    if (!client) return Promise.resolve({ error: "This deployment doesn't have admin sign-in configured." });
+    return client.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    }).then(function (r) {
+      return { error: r.error ? r.error.message : null };
+    });
+  }
+
+  // Only valid right after landing back from the password-reset email link
+  // (which signs them into a temporary recovery session) — see script.js's
+  // handling of #...&type=recovery in the URL.
+  function updatePassword(newPassword) {
+    if (!client) return Promise.resolve({ error: "This deployment doesn't have admin sign-in configured." });
+    return client.auth.updateUser({ password: newPassword }).then(function (r) {
+      return { error: r.error ? r.error.message : null };
+    });
+  }
+
   function signOut() {
     if (!client) return Promise.resolve();
     return client.auth.signOut();
@@ -111,6 +130,8 @@ window.ShiftFlowAuth = (function () {
     signInWithPassword: signInWithPassword,
     signUp: signUp,
     resendConfirmation: resendConfirmation,
+    resetPasswordForEmail: resetPasswordForEmail,
+    updatePassword: updatePassword,
     signOut: signOut,
     onAuthChange: onAuthChange,
     uploadToSignedUrl: uploadToSignedUrl

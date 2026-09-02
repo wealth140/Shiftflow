@@ -2029,15 +2029,22 @@
   }
 
   /* --- Admin sign-in (only active when Supabase auth is configured) --- */
-  var adminAuthMode = "signin"; // "signin" | "signup"
+  var adminAuthMode = "signin"; // "signin" | "signup" | "reset"
   function renderAdminAuthMode() {
     var isSignup = adminAuthMode === "signup";
-    $("#adminAuthTitle").textContent = isSignup ? "Create your admin account" : "Sign in";
-    $("#adminAuthSub").textContent = isSignup
-      ? "This becomes the account that manages your organization's schedule."
-      : "Use your admin account to manage this organization's schedule.";
-    $("#adminAuthSubmitBtn").textContent = isSignup ? "Create account" : "Sign in";
+    var isReset = adminAuthMode === "reset";
+    $("#adminAuthTitle").textContent = isReset ? "Set a new password" : (isSignup ? "Create your admin account" : "Sign in");
+    $("#adminAuthSub").textContent = isReset
+      ? "Choose a new password for your account."
+      : (isSignup ? "This becomes the account that manages your organization's schedule." : "Use your admin account to manage this organization's schedule.");
+    $("#adminAuthSubmitBtn").textContent = isReset ? "Update password" : (isSignup ? "Create account" : "Sign in");
+    $("#adminAuthToggleBtn").hidden = isReset;
     $("#adminAuthToggleBtn").textContent = isSignup ? "Already have an account? Sign in" : "No account yet? Create one";
+    var forgotBtn = $("#adminAuthForgotBtn");
+    if (forgotBtn) forgotBtn.hidden = isSignup || isReset;
+    var emailLabel = $("#adminAuthEmail").closest("label");
+    if (emailLabel) emailLabel.hidden = isReset;
+    $("#adminAuthPassword").placeholder = isReset ? "New password, at least 6 characters" : "At least 6 characters";
     $("#adminAuthMsg").textContent = "";
   }
   function enterAdminAuthGate() {
@@ -2068,10 +2075,32 @@
   }
   var adminAuthBackBtn = $("#adminAuthBackBtn");
   if (adminAuthBackBtn) adminAuthBackBtn.addEventListener("click", showRoleGate);
+  var adminAuthForgotBtn = $("#adminAuthForgotBtn");
+  if (adminAuthForgotBtn) {
+    adminAuthForgotBtn.addEventListener("click", function () {
+      var email = $("#adminAuthEmail").value.trim();
+      var msg = $("#adminAuthMsg");
+      if (!email) { msg.textContent = "Enter your email above first, then tap this again."; $("#adminAuthEmail").focus(); return; }
+      msg.textContent = "Sending…";
+      window.ShiftFlowAuth.resetPasswordForEmail(email).then(function (result) {
+        msg.textContent = result.error || "Check your email for a reset link.";
+      });
+    });
+  }
   function submitAdminAuth() {
-    var email = $("#adminAuthEmail").value.trim();
     var password = $("#adminAuthPassword").value;
     var msg = $("#adminAuthMsg");
+    if (adminAuthMode === "reset") {
+      if (password.length < 6) { msg.textContent = "Password needs to be at least 6 characters."; return; }
+      msg.textContent = "Updating…";
+      window.ShiftFlowAuth.updatePassword(password).then(function (result) {
+        if (result.error) { msg.textContent = result.error; return; }
+        showToast("Password updated.");
+        checkAdminOrgAndEnter();
+      });
+      return;
+    }
+    var email = $("#adminAuthEmail").value.trim();
     if (!email || !password) { msg.textContent = "Enter an email and password."; return; }
     if (password.length < 6) { msg.textContent = "Password needs to be at least 6 characters."; return; }
     msg.textContent = "Working on it…";
@@ -2101,7 +2130,19 @@
         msg.textContent = result.error;
         return;
       }
-      if (result.needsConfirmation) { msg.textContent = "Account created — check your email to confirm it, then sign in."; adminAuthMode = "signin"; renderAdminAuthMode(); return; }
+      if (result.needsConfirmation) {
+        // renderAdminAuthMode() resets #adminAuthMsg to "" (correct for
+        // every other caller — a fresh form shouldn't show a stale
+        // message) — so it has to run BEFORE setting this one, not after,
+        // or it immediately erases the only feedback telling someone their
+        // signup actually worked. That's exactly what was happening: the
+        // form silently flipped to "Sign in" with zero explanation, which
+        // reads as "create account isn't working at all."
+        adminAuthMode = "signin";
+        renderAdminAuthMode();
+        msg.textContent = "Account created — check your email to confirm it, then sign in.";
+        return;
+      }
       var wasSignup = adminAuthMode === "signup";
       checkAdminOrgAndEnter();
       showToast(wasSignup ? "Account created — welcome to SwiftFlow." : "Signed in.");
@@ -2129,6 +2170,19 @@
 
   // A worker's whole "sign-in" is opening their personal link — no name
   // picker, no PIN. The token in ?invite= resolves straight to them.
+  // A PWA "Add to Home Screen" shortcut doesn't reopen whatever URL was on
+  // screen when it was installed — it launches at manifest.json's
+  // start_url, a fixed "./index.html" with no ?invite=... on it. Without
+  // saving the token somewhere that survives that, a worker who installs
+  // the shortcut from their personal link loses it the moment they tap
+  // the icon instead of the link. localStorage is that somewhere — same
+  // origin, survives the PWA launch path, and (unlike the URL) is private
+  // to that one browser/device rather than visible in a shared history.
+  var INVITE_STORAGE_KEY = "swiftflow-worker-invite";
+  function saveInviteToken(token) { try { localStorage.setItem(INVITE_STORAGE_KEY, token); } catch (e) {} }
+  function getSavedInviteToken() { try { return localStorage.getItem(INVITE_STORAGE_KEY); } catch (e) { return null; } }
+  function clearSavedInviteToken() { try { localStorage.removeItem(INVITE_STORAGE_KEY); } catch (e) {} }
+
   function enterViaInviteLink(token) {
     ShiftFlowAPI.setInviteToken(token);
     orgGate.classList.add("is-hidden");
@@ -2139,10 +2193,12 @@
         : null;
       if (!data || !worker) {
         ShiftFlowAPI.setInviteToken(null);
+        clearSavedInviteToken();
         showToast("That invite link isn't valid anymore — ask your admin to resend it.", true);
         showRoleGate();
         return;
       }
+      saveInviteToken(token);
       hydrateFromBackend(data);
       renderEverything();
       var resolvedWorker = team.find(function (w) { return w.id === data.currentWorkerId; }) || worker;
@@ -2195,6 +2251,7 @@
     ShiftFlowAPI.joinOrg({ orgId: orgId, name: name, role: role, email: email }).then(function (result) {
       if (!result || !result.worker) { msg.textContent = "Couldn't join right now — try again in a moment."; return; }
       ShiftFlowAPI.setInviteToken(result.worker.token);
+      saveInviteToken(result.worker.token);
       state.orgType = result.orgType;
       team = [result.worker];
       renderEverything();
@@ -2350,6 +2407,7 @@
   if (workerLogoutBtn) {
     workerLogoutBtn.addEventListener("click", function () {
       ShiftFlowAPI.setInviteToken(null);
+      clearSavedInviteToken();
       showRoleGate();
     });
   }
@@ -2555,6 +2613,12 @@
     // shortly after it processes it, so this is a narrow window to notice
     // "this load is someone arriving fresh off their confirmation email".
     var justConfirmedEmail = /type=signup/.test(window.location.hash);
+    // Same idea for the "reset your password" email link: Supabase signs
+    // them into a temporary recovery session and redirects back here.
+    // Without checking for this, they'd land signed in with their OLD
+    // password still active and no indication they were ever supposed to
+    // set a new one.
+    var isPasswordRecovery = /type=recovery/.test(window.location.hash);
 
     // Render immediately from local (empty) state — never blocks on the network.
     renderEverything();
@@ -2565,7 +2629,7 @@
     // A worker's personal invite link overrides everything else — it
     // identifies exactly who they are, so skip straight to their view.
     var urlParams = new URLSearchParams(window.location.search);
-    var inviteParam = urlParams.get("invite");
+    var inviteParam = urlParams.get("invite") || getSavedInviteToken();
     if (inviteParam) {
       enterViaInviteLink(inviteParam);
       return;
@@ -2582,7 +2646,13 @@
       // picks theirs right after signing in, not before.
       orgGate.classList.add("is-hidden");
       window.ShiftFlowAuth.getSession().then(function (session) {
-        if (session) {
+        if (session && isPasswordRecovery) {
+          roleGate.hidden = true;
+          adminAuthMode = "reset";
+          renderAdminAuthMode();
+          adminAuthGate.hidden = false;
+          updateToggleSurface();
+        } else if (session) {
           checkAdminOrgAndEnter();
           if (justConfirmedEmail) showToast("Email confirmed — you're signed in.");
         } else {
