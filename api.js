@@ -116,8 +116,10 @@ window.ShiftFlowAPI = (function () {
     setInviteToken: function (token) { inviteToken = token || null; },
     getState: function () { return get("/state"); },
     getJoinInfo: function (orgId) { return get("/join-info?org=" + encodeURIComponent(orgId)); },
+    getJoinInfoByCode: function (code) { return get("/join-info?code=" + encodeURIComponent(code)); },
     joinOrg: function (payload) { return post("/join", payload); },
     setOrg: function (orgType) { return post("/org", { orgType: orgType }); },
+    setOrgName: function (orgName) { return post("/org-name", { orgName: orgName }); },
     setScheduleConfig: function (cfg) { return post("/schedule-config", cfg || {}); },
     addWorker: function (worker) { return post("/workers", worker); },
     removeWorker: function (id) { return del("/workers/" + id); },
@@ -131,6 +133,7 @@ window.ShiftFlowAPI = (function () {
     requestSwap: function (swap) { return post("/swaps", swap); },
     logAttendance: function (entry) { return post("/attendance", entry); },
     postChatMessage: function (channel, message) { return post("/chat/" + channel, message); },
+    deleteChatMessage: function (channel, id) { return post("/chat/" + channel + "/delete", { id: id }); },
     getChatMediaUploadUrl: function (filename) { return post("/chat-media-upload-url", { filename: filename }); },
     addAnnouncement: function (announcement) { return post("/announcements", announcement); }
   };

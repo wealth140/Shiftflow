@@ -42,10 +42,18 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const EMAIL_FROM = process.env.EMAIL_FROM || "SwiftFlow <onboarding@resend.dev>";
 
 var DEFAULT_ORG_DATA = {
-  orgType: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
+  orgType: null, orgName: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
   attendance: [], chat: { general: [], schedule: [], announcements: [] }, announcements: [],
   scheduleDays: null, jobTypes: null
 };
+
+// A short, speakable stand-in for the org's uuid — nothing new to store,
+// just its first segment. Not cryptographically unique across an
+// unbounded number of orgs, but plenty for this app's scale, and it means
+// "join code" needs no schema migration or admin-facing setup step.
+function shortJoinCode(orgId) {
+  return String(orgId || "").replace(/-/g, "").slice(0, 8).toUpperCase();
+}
 
 function sendInviteEmail(toEmail, subject, text) {
   if (!RESEND_API_KEY) return Promise.resolve({ sent: false, reason: "no-email-service" });
@@ -182,21 +190,34 @@ module.exports = async function handler(req, res) {
       if (adminUser) {
         var org = await getOrgForAdmin(adminUser);
         if (!org) return sendJson(200, Object.assign({}, DEFAULT_ORG_DATA, { hasOrg: false }));
-        return sendJson(200, Object.assign({}, org.data, { hasOrg: true, orgId: org.id }));
+        return sendJson(200, Object.assign({}, org.data, { hasOrg: true, orgId: org.id, joinCode: shortJoinCode(org.id) }));
       }
       return sendJson(401, { error: "Sign in, or use your invite link." });
     }
 
     /* ---------- GET /join-info — public, powers the self-serve join form.
        Deliberately minimal: just enough to render the form (what kind of
-       org this is, what roles are available) — never the existing roster,
-       emails, or anything else about who already works there. */
+       org this is, what roles are available, its display name for
+       confirmation) — never the existing roster, emails, or anything else
+       about who already works there. Takes either the org's full id
+       (?org=, from a join link) or its short join code (?code=, typed in
+       by hand) — whichever a worker actually has on them. */
     if (resource === "join-info" && req.method === "GET") {
       var joinOrgId = (req.query.org || "").toString().trim();
-      if (!joinOrgId) return sendJson(400, { error: "Missing org id." });
-      const { data: joinOrg } = await supabase.from("organizations").select("data").eq("id", joinOrgId).maybeSingle();
-      if (!joinOrg) return sendJson(404, { error: "That join link isn't valid — ask your admin for a current one." });
-      return sendJson(200, { orgType: joinOrg.data.orgType, jobTypes: joinOrg.data.jobTypes });
+      var joinCode = (req.query.code || "").toString().trim().replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+      if (!joinOrgId && !joinCode) return sendJson(400, { error: "Missing org id or code." });
+      var joinOrg = null;
+      if (joinOrgId) {
+        const { data } = await supabase.from("organizations").select("id, data").eq("id", joinOrgId).maybeSingle();
+        joinOrg = data;
+      } else {
+        // No schema support for looking up by code directly — org count is
+        // small enough at this app's scale that scanning ids is fine.
+        const { data: candidates } = await supabase.from("organizations").select("id, data").limit(2000);
+        joinOrg = (candidates || []).find((o) => shortJoinCode(o.id) === joinCode) || null;
+      }
+      if (!joinOrg) return sendJson(404, { error: "That code or link isn't valid — ask your admin for a current one." });
+      return sendJson(200, { orgId: joinOrg.id, orgType: joinOrg.data.orgType, orgName: joinOrg.data.orgName, jobTypes: joinOrg.data.jobTypes });
     }
 
     // Self-serve join — no admin action needed first. Anyone with the org's
@@ -277,6 +298,17 @@ module.exports = async function handler(req, res) {
       if (Array.isArray(scBody.duties)) data.jobTypes = scBody.duties.map((d) => String(d).slice(0, 60)).slice(0, 40);
       await saveOrg(orgId, data);
       return sendJson(200, { scheduleDays: data.scheduleDays, jobTypes: data.jobTypes });
+    }
+
+    // Separate from POST /org on purpose — that route resets the schedule
+    // setup whenever it runs (it's meant for switching org type), which a
+    // simple rename shouldn't trigger.
+    if (resource === "org-name" && req.method === "POST") {
+      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      var nameBody = await readBody(req);
+      data.orgName = String(nameBody.orgName || "").trim().slice(0, 80) || null;
+      await saveOrg(orgId, data);
+      return sendJson(200, { orgName: data.orgName });
     }
 
     if (resource === "workers" && parts.length === 2 && req.method === "POST") {
@@ -440,6 +472,23 @@ module.exports = async function handler(req, res) {
       data.chat[channel].push(cBody);
       await saveOrg(orgId, data);
       return sendJson(200, cBody);
+    }
+
+    // Deleting a message: an admin can remove anything; a worker can only
+    // remove their own (matched by authorKey against the invite token that
+    // resolved this request — workers have no login of their own to check
+    // against, so the token standing in for "who is this" is what's used).
+    if (resource === "chat" && parts[3] === "delete" && req.method === "POST") {
+      var delChannel = parts[2];
+      var delBody = await readBody(req);
+      var msgs = data.chat[delChannel] || [];
+      var target = msgs.find((m) => m.id === delBody.id);
+      if (!target) return sendJson(404, { error: "not found" });
+      var ownsIt = isAdminCaller ? target.authorKey === "admin" : target.authorKey === String(callerWorkerId);
+      if (!isAdminCaller && !ownsIt) return sendJson(403, { error: "You can only delete your own messages." });
+      data.chat[delChannel] = msgs.filter((m) => m.id !== delBody.id);
+      await saveOrg(orgId, data);
+      return sendJson(200, { removed: delBody.id });
     }
 
     return sendJson(404, { error: "unknown endpoint" });

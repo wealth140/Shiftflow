@@ -606,6 +606,7 @@
     var daysWrap = $("#dayPicker");
     var jobWrap = $("#jobTypeList");
     if (!daysWrap || !jobWrap) return;
+    renderOrgIdentity();
     var cfg = orgConfig();
     var daysLabel = $("#scheduleSetupDaysLabel");
     var daysHint = $("#scheduleSetupDaysHint");
@@ -866,6 +867,10 @@
   var autoAssignBtn = $("#autoAssignBtn");
   var autoAssignLabel = $("#autoAssignLabel");
 
+  function roleMatches(role, duty) {
+    return String(role || "").trim().toLowerCase() === String(duty || "").trim().toLowerCase();
+  }
+
   function autoAssignGrid(cfg) {
     var loadCount = {};
     team.forEach(function (w) { loadCount[w.id] = 0; });
@@ -873,20 +878,26 @@
       cfg.days.forEach(function (d) { if (duties[w.id] && duties[w.id][d] && duties[w.id][d] !== "Off") loadCount[w.id]++; });
     });
 
-    var filled = 0;
+    var filled = 0, byFallback = 0;
     cfg.days.forEach(function (day) {
       team.forEach(function (worker) {
         if (!duties[worker.id]) duties[worker.id] = {};
         var current = duties[worker.id][day];
         if (current && current !== "Off") return; // already set — never overwrite
-        if (!cfg.duties.includes(worker.role)) return; // no confident match for this worker
-        duties[worker.id][day] = worker.role;
+        // Their own role is the confident match. If it no longer matches
+        // any current job type (e.g. renamed since they were added), fall
+        // back to whatever job type is still theirs closest by name, or —
+        // rather than leave the day blank — their own role anyway. A
+        // schedule with a slightly-off label beats an empty one.
+        var matched = cfg.duties.find(function (d) { return roleMatches(worker.role, d); });
+        duties[worker.id][day] = matched || worker.role;
+        if (!matched) byFallback++;
         loadCount[worker.id]++;
         filled++;
-        ShiftFlowAPI.setDuty(worker.id, day, worker.role).catch(function () {});
+        ShiftFlowAPI.setDuty(worker.id, day, duties[worker.id][day]).catch(function () {});
       });
     });
-    return filled;
+    return { filled: filled, byFallback: byFallback };
   }
 
   function autoAssignChurch(cfg) {
@@ -899,37 +910,58 @@
       });
     });
 
-    var filled = 0;
+    var filled = 0, byFallback = 0;
+    var openSlots = [];
     cfg.duties.forEach(function (duty) {
       if (!churchAssignments[duty]) churchAssignments[duty] = {};
       cfg.services.forEach(function (service) {
-        if (churchAssignments[duty][service]) return; // already set — never overwrite
-        var candidates = team.filter(function (w) { return w.role === duty; });
-        if (candidates.length === 0) return; // no one qualified for this ministry duty
-        candidates.sort(function (a, b) { return (loadCount[a.id] || 0) - (loadCount[b.id] || 0); });
-        var chosen = candidates[0];
-        churchAssignments[duty][service] = chosen.id;
-        loadCount[chosen.id] = (loadCount[chosen.id] || 0) + 1;
-        filled++;
-        ShiftFlowAPI.setChurchAssignment(duty, service, chosen.id).catch(function () {});
+        if (!churchAssignments[duty][service]) openSlots.push({ duty: duty, service: service });
       });
     });
-    return filled;
+
+    function assign(slot, worker) {
+      churchAssignments[slot.duty][slot.service] = worker.id;
+      loadCount[worker.id] = (loadCount[worker.id] || 0) + 1;
+      filled++;
+      ShiftFlowAPI.setChurchAssignment(slot.duty, slot.service, worker.id).catch(function () {});
+    }
+
+    var stillOpen = [];
+    openSlots.forEach(function (slot) {
+      var candidates = team.filter(function (w) { return roleMatches(w.role, slot.duty); });
+      if (candidates.length === 0) { stillOpen.push(slot); return; }
+      candidates.sort(function (a, b) { return (loadCount[a.id] || 0) - (loadCount[b.id] || 0); });
+      assign(slot, candidates[0]);
+    });
+
+    // Nobody has a matching ministry role for these — rather than leave
+    // them unfilled, repeat whoever's least-loaded overall. Explicitly
+    // requested: a covered slot with an imperfect match beats an empty one.
+    stillOpen.forEach(function (slot) {
+      if (team.length === 0) return;
+      var byLoad = team.slice().sort(function (a, b) { return (loadCount[a.id] || 0) - (loadCount[b.id] || 0); });
+      assign(slot, byLoad[0]);
+      byFallback++;
+    });
+
+    return { filled: filled, byFallback: byFallback };
   }
 
   function runAutoAssign() {
     if (team.length === 0) { showToast("Add workers first — auto-assign matches them by role.", true); return; }
     var cfg = orgConfig();
-    var filled = cfg.mode === "church" ? autoAssignChurch(cfg) : autoAssignGrid(cfg);
+    var result = cfg.mode === "church" ? autoAssignChurch(cfg) : autoAssignGrid(cfg);
     renderSchedule();
     renderTodayShifts();
     updateStatCards();
     renderBarChart();
-    if (filled === 0) {
-      showToast("Nothing left to auto-assign — either everything's covered, or no one's role matches the open slots.");
+    if (result.filled === 0) {
+      showToast("Nothing left to auto-assign — everything's already covered.");
     } else {
-      showToast("Auto-assigned " + filled + " open " + (filled === 1 ? "slot" : "slots") + " by matching worker roles.");
-      pushActivity("Auto-assign filled " + filled + " open " + (filled === 1 ? "slot" : "slots") + " based on worker roles.");
+      var msg = "Auto-assigned " + result.filled + " open " + (result.filled === 1 ? "slot" : "slots") + ".";
+      if (result.byFallback > 0) msg += " " + result.byFallback + " of those had no role match, so the least-loaded person was repeated instead of leaving it open — worth a glance.";
+      showToast(msg);
+      pushActivity("Auto-assign filled " + result.filled + " open " + (result.filled === 1 ? "slot" : "slots") + (result.byFallback > 0 ? (" (" + result.byFallback + " by fallback, no exact role match)") : "") + ".");
     }
   }
   if (autoAssignBtn) autoAssignBtn.addEventListener("click", runAutoAssign);
@@ -1250,8 +1282,12 @@
     }).catch(function () { window.open(url, "_blank"); });
   }
   function renderChatMessage(container, msg) {
-    var wrap = el("div", "chat-msg" + (msg.me ? " is-me" : "") + (msg.system ? " is-system" : ""));
-    if (!msg.me) wrap.appendChild(el("span", "avatar", initials(msg.name)));
+    // Computed fresh per viewer, per render — never trust a stored "me"
+    // flag on the message itself (see currentAuthorKey's comment).
+    var isMine = !msg.system && msg.authorKey && msg.authorKey === currentAuthorKey();
+    var isAdminViewer = accessMode === "admin";
+    var wrap = el("div", "chat-msg" + (isMine ? " is-me" : "") + (msg.system ? " is-system" : ""));
+    if (!isMine) wrap.appendChild(el("span", "avatar", initials(msg.name)));
     var body = el("div", "", "<p class='chat-msg-name'>" + escapeHtml(msg.name) + "</p><div class='chat-msg-bubble'>" + (msg.text ? escapeHtml(msg.text) : "") + "</div><p class='chat-msg-time'>" + msg.time + "</p>");
     if (msg.mediaUrl) {
       var media = el("div", "chat-msg-media");
@@ -1277,6 +1313,12 @@
         saveBtn.type = "button"; saveBtn.setAttribute("aria-label", "Save");
         saveBtn.addEventListener("click", function () { saveChatMedia(msg.mediaUrl); });
         actions.appendChild(saveBtn);
+      }
+      if (msg.id && (isMine || isAdminViewer)) {
+        var delBtn = el("button", "chat-msg-action chat-msg-action-delete", "<svg viewBox='0 0 24 24'><path d='M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13'/></svg>");
+        delBtn.type = "button"; delBtn.setAttribute("aria-label", "Delete");
+        delBtn.addEventListener("click", function () { deleteMessage(currentChannel, msg.id); });
+        actions.appendChild(delBtn);
       }
       body.appendChild(actions);
     }
@@ -1304,6 +1346,13 @@
     if (channel === currentChannel) renderChatThread();
   }
 
+  function deleteMessage(channel, id) {
+    if (!chatData[channel]) return;
+    chatData[channel] = chatData[channel].filter(function (m) { return m.id !== id; });
+    if (channel === currentChannel) renderChatThread();
+    ShiftFlowAPI.deleteChatMessage(channel, id).catch(function () {});
+  }
+
   function setChannel(channel) {
     currentChannel = channel;
     $all(".channel-btn").forEach(function (b) { b.classList.toggle("is-active", b.dataset.channel === channel || b.dataset.wchannel === channel); });
@@ -1316,11 +1365,22 @@
   // Click + Enter handling, not a <form> submit — sandboxed preview contexts
   // can silently block native form submission, so every action button in
   // this app is wired directly rather than relying on it.
+  // "Mine" isn't something a message can carry once it's shared — a flag
+  // baked in at send time would say "me" to every viewer, not just the
+  // sender. authorKey is the stable, comparable identity ("admin", or a
+  // worker's own id) that both permission checks and each viewer's own
+  // left/right bubble alignment are computed from, fresh, every render.
+  function currentAuthorKey() {
+    return (accessMode === "worker" && currentWorker) ? String(currentWorker.id) : "admin";
+  }
+  function genMsgId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
   function sendChatMessageFrom(inputEl) {
     var text = inputEl.value.trim();
     if (!text) { inputEl.focus(); return; }
     var senderName = (accessMode === "worker" && currentWorker) ? currentWorker.name : "You";
-    var msg = { name: senderName, me: true, text: text, time: timeNow() };
+    var msg = { id: genMsgId(), authorKey: currentAuthorKey(), name: senderName, text: text, time: timeNow() };
     addChatMessage(currentChannel, msg);
     ShiftFlowAPI.postChatMessage(currentChannel, msg).catch(function () {});
     inputEl.value = "";
@@ -1353,7 +1413,7 @@
       return window.ShiftFlowAuth.uploadToSignedUrl(result.path, result.token, file).then(function (uploaded) {
         if (uploaded.error) { statusEl.textContent = "Upload failed: " + uploaded.error; return; }
         var senderName = (accessMode === "worker" && currentWorker) ? currentWorker.name : "You";
-        var msg = { name: senderName, me: true, text: "", time: timeNow(), mediaUrl: result.publicUrl, mediaType: file.type };
+        var msg = { id: genMsgId(), authorKey: currentAuthorKey(), name: senderName, text: "", time: timeNow(), mediaUrl: result.publicUrl, mediaType: file.type };
         addChatMessage(currentChannel, msg);
         ShiftFlowAPI.postChatMessage(currentChannel, msg).catch(function () {});
         statusEl.hidden = true;
@@ -1645,7 +1705,8 @@
     "• \"mark Sam on shift\" / \"mark Sam off shift\"<br>" +
     "• \"add job type Delivery Driver\" / \"remove job type Bar\"<br>" +
     "• \"working days: Mon, Tue, Wed\"<br>" +
-    "• \"join link\" (multi-tenant: get your team's self-serve join link)<br>" +
+    "• \"join link\" / \"join code\" (multi-tenant: get your team's self-serve join link or code)<br>" +
+    "• \"set our organization name to Mario's Pizza\"<br>" +
     "• \"switch organization to Restaurant\"<br>" +
     "• \"approve swap 3\" or \"approve Sam's swap\"<br>" +
     "• \"decline swap 3\"<br>" +
@@ -1683,6 +1744,20 @@
       if (!state.orgId) return "Set up your organization first — I'll have a join link once that's done.";
       var joinUrl = window.location.origin + window.location.pathname + "?join=" + state.orgId;
       return "Anyone with this link can add themselves to your roster: " + joinUrl;
+    }
+
+    if (/join ?code|team code|organi[sz]ation code/.test(lower)) {
+      if (!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured())) return "Join codes are a multi-tenant feature — this deployment uses per-worker invite links instead.";
+      if (!state.joinCode) return "Set up your organization first — I'll have a join code once that's done.";
+      return "Your team's join code is " + state.joinCode + " — a worker can enter it under \"I'm a worker\" on the access screen.";
+    }
+
+    var orgNameMatch = raw.match(/^(?:set|change)\s+(?:the\s+|our\s+|my\s+)?organi[sz]ation(?:'s)? name to\s+(.+)$/i) || raw.match(/^(?:rename|call)\s+(?:the\s+|our\s+)?organi[sz]ation\s+(.+)$/i);
+    if (orgNameMatch) {
+      if (!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured())) return "Organization names are a multi-tenant feature, not used in this deployment.";
+      var newOrgName = orgNameMatch[1].trim().replace(/^["']|["']$/g, "");
+      ShiftFlowAPI.setOrgName(newOrgName).then(function (result) { state.orgName = (result && result.orgName) || null; renderOrgIdentity(); }).catch(function () {});
+      return "Set your organization's name to \"" + escapeHtml(newOrgName) + "\".";
     }
 
     var orgTypeMatch = raw.match(/^(?:set|switch|change)\s+(?:the\s+)?organi[sz]ation(?:\s+type)?\s+to\s+(.+)$/i);
@@ -1821,9 +1896,12 @@
     if (/auto.?assign|fill open shifts|fill the schedule/.test(lower)) {
       if (team.length === 0) return "Add workers first — auto-assign matches them by role.";
       var cfgA = orgConfig();
-      var filled = cfgA.mode === "church" ? autoAssignChurch(cfgA) : autoAssignGrid(cfgA);
+      var resultA = cfgA.mode === "church" ? autoAssignChurch(cfgA) : autoAssignGrid(cfgA);
       renderSchedule(); renderTodayShifts(); updateStatCards(); renderBarChart();
-      return filled === 0 ? "Nothing left to auto-assign — either everything's covered, or no one's role matches the open slots." : ("Auto-assigned " + filled + " open " + (filled === 1 ? "slot" : "slots") + ".");
+      if (resultA.filled === 0) return "Nothing left to auto-assign — everything's already covered.";
+      var replyA = "Auto-assigned " + resultA.filled + " open " + (resultA.filled === 1 ? "slot" : "slots") + ".";
+      if (resultA.byFallback > 0) replyA += " " + resultA.byFallback + " had no exact role match, so I repeated the least-loaded person rather than leave it open.";
+      return replyA;
     }
 
     var announceMatch = raw.match(/^announce:?\s*(.+?)\s*[—-]\s*(.+)$/i) || raw.match(/^(?:post |create )?announcement:?\s*(.+?)\s*[—-]\s*(.+)$/i);
@@ -1972,18 +2050,10 @@
     accessMode = null;
     currentWorker = null;
     roleGate.hidden = false;
-    // Multi-tenant deployments (Supabase auth configured): workers only
-    // ever arrive through their own personal invite link, which resolves
-    // straight into their view — there's no organization context for a
-    // generic "I'm a worker" picker to hand them into, so it isn't shown.
-    if (roleWorkerBtn && window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) {
-      roleWorkerBtn.hidden = true;
-      var roleGrid = roleWorkerBtn.closest(".role-gate-grid");
-      if (roleGrid) roleGrid.classList.add("is-single-card");
-    }
     workerLoginGate.hidden = true;
     if (adminAuthGate) adminAuthGate.hidden = true;
     if (joinGate) joinGate.hidden = true;
+    if (codeEntryGate) codeEntryGate.hidden = true;
     appEl.hidden = true;
     workerShell.hidden = true;
     updateToggleSurface();
@@ -1995,6 +2065,7 @@
     workerLoginGate.hidden = true;
     if (adminAuthGate) adminAuthGate.hidden = true;
     if (joinGate) joinGate.hidden = true;
+    if (codeEntryGate) codeEntryGate.hidden = true;
     appEl.hidden = false;
     workerShell.hidden = true;
     var multiTenantActive = !!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured());
@@ -2024,6 +2095,37 @@
         });
       } else {
         window.prompt("Copy your team's join link:", url);
+      }
+    });
+  }
+
+  // The join code is just a short, speakable stand-in for the org id (see
+  // shortJoinCode in api/router.js) — nothing to fetch separately, just
+  // display what hydrateFromBackend already stored on state.
+  function renderOrgIdentity() {
+    var nameInput = $("#orgNameInput");
+    var codeDisplay = $("#orgJoinCodeDisplay");
+    if (nameInput && document.activeElement !== nameInput) nameInput.value = state.orgName || "";
+    if (codeDisplay) codeDisplay.textContent = state.joinCode || "——";
+  }
+  var orgNameSaveBtn = $("#orgNameSaveBtn");
+  if (orgNameSaveBtn) {
+    orgNameSaveBtn.addEventListener("click", function () {
+      var val = $("#orgNameInput").value.trim();
+      ShiftFlowAPI.setOrgName(val).then(function (result) {
+        state.orgName = (result && result.orgName) || null;
+        showToast(state.orgName ? "Organization name saved." : "Organization name cleared.");
+      }).catch(function () {});
+    });
+  }
+  var copyJoinCodeBtn = $("#copyJoinCodeBtn");
+  if (copyJoinCodeBtn) {
+    copyJoinCodeBtn.addEventListener("click", function () {
+      if (!state.joinCode) return;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(state.joinCode).then(function () { showToast("Join code copied."); }, function () { window.prompt("Your team's join code:", state.joinCode); });
+      } else {
+        window.prompt("Your team's join code:", state.joinCode);
       }
     });
   }
@@ -2339,6 +2441,7 @@
     orgGate.classList.add("is-hidden");
     if (adminAuthGate) adminAuthGate.hidden = true;
     if (joinGate) joinGate.hidden = true;
+    if (codeEntryGate) codeEntryGate.hidden = true;
     workerLoginGate.hidden = true;
     appEl.hidden = true;
     workerShell.hidden = false;
@@ -2352,7 +2455,49 @@
     checkShiftReminder();
   }
 
-  if (roleWorkerBtn) roleWorkerBtn.addEventListener("click", enterWorkerLogin);
+  var codeEntryGate = $("#codeEntryGate");
+  function enterCodeEntry() {
+    roleGate.hidden = true;
+    if (codeEntryGate) {
+      $("#codeEntryInput").value = "";
+      $("#codeEntryMsg").textContent = "";
+      codeEntryGate.hidden = false;
+      updateToggleSurface();
+      $("#codeEntryInput").focus();
+    }
+  }
+  if (roleWorkerBtn) {
+    roleWorkerBtn.addEventListener("click", function () {
+      // Multi-tenant: no shared roster to pick a name off of, so a worker
+      // without their personal link yet identifies their organization by
+      // its short code instead. Local dev keeps the original name+PIN
+      // picker, since it's single-tenant and that roster is unambiguous.
+      if (window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) enterCodeEntry();
+      else enterWorkerLogin();
+    });
+  }
+  var codeEntryBackBtn = $("#codeEntryBackBtn");
+  if (codeEntryBackBtn) codeEntryBackBtn.addEventListener("click", showRoleGate);
+  function submitCodeEntry() {
+    var code = $("#codeEntryInput").value.trim();
+    var msg = $("#codeEntryMsg");
+    if (!code) { msg.textContent = "Enter your organization's code first."; return; }
+    msg.textContent = "Looking that up…";
+    ShiftFlowAPI.getJoinInfoByCode(code).then(function (info) {
+      if (!info || !info.orgId) { msg.textContent = "That code isn't valid — check with your admin."; return; }
+      // So the rest of the join flow (which reads ?join= from the address
+      // bar) keeps working exactly as it does for someone who clicked an
+      // actual join link, rather than needing its own separate path.
+      history.replaceState(null, "", window.location.pathname + "?join=" + info.orgId);
+      enterViaJoinLink(info.orgId);
+    }).catch(function () {
+      msg.textContent = "Couldn't reach the server — try again in a moment.";
+    });
+  }
+  var codeEntrySubmitBtn = $("#codeEntrySubmitBtn");
+  if (codeEntrySubmitBtn) codeEntrySubmitBtn.addEventListener("click", submitCodeEntry);
+  var codeEntryInput = $("#codeEntryInput");
+  if (codeEntryInput) codeEntryInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); submitCodeEntry(); } });
   if (switchRoleBtn) switchRoleBtn.addEventListener("click", function () { closeSidebar(); showRoleGate(); });
 
   function populateWorkerLoginSelect() {
@@ -2583,6 +2728,8 @@
     if (Array.isArray(data.scheduleDays)) state.scheduleDays = data.scheduleDays;
     if (Array.isArray(data.jobTypes)) state.jobTypes = data.jobTypes;
     if (data.orgId) state.orgId = data.orgId;
+    if (data.joinCode) state.joinCode = data.joinCode;
+    state.orgName = data.orgName || null;
   }
 
   function renderEverything() {

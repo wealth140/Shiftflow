@@ -474,7 +474,11 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .status-pill.active{ background: var(--teal); color: var(--on-accent); }
 
 /* ================= Team Chat (in-app) ================= */
-.chat-layout{ display: grid; grid-template-columns: 200px 1fr; gap: 18px; height: calc(100vh - 220px); min-height: 420px; }
+/* The extra 90px (vs. just clearing the topbar/padding) keeps the send
+   button clear of the floating assistant button's fixed bottom-right
+   corner — without it, the two visually collide since the panel's own
+   bottom edge and the FAB's footprint land in the same screen region. */
+.chat-layout{ display: grid; grid-template-columns: 200px 1fr; gap: 18px; height: calc(100vh - 220px - 90px); min-height: 420px; }
 .channel-list{ display: flex; flex-direction: column; gap: 2px; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; height: fit-content; box-shadow: var(--shadow-sm); }
 .channel-btn{ text-align: left; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 0.88rem; color: var(--slate); }
 .channel-btn:hover{ background: var(--paper); color: var(--ink); }
@@ -514,6 +518,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .chat-msg-action{ width: 26px; height: 26px; border-radius: 50%; border: none; background: transparent; color: var(--slate-2); display: flex; align-items: center; justify-content: center; opacity: 0.6; transition: opacity 0.15s ease, background 0.15s ease; }
 .chat-msg-action:hover{ opacity: 1; background: var(--paper); }
 .chat-msg-action svg{ width: 13px; height: 13px; }
+.chat-msg-action-delete:hover{ color: var(--coral); background: var(--coral-tint); }
 
 /* ================= Announcements ================= */
 .announce-list{ display: flex; flex-direction: column; gap: 14px; }
@@ -532,6 +537,14 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .schedule-toolbar-actions{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .schedule-setup-wrap{ margin: 18px 0 24px; background: var(--paper-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; box-shadow: var(--shadow-sm); }
+.schedule-setup-org{ margin-bottom: 22px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.schedule-setup-org h3{ font-size: 0.9rem; margin-bottom: 4px; }
+.schedule-setup-org .field-hint{ margin-bottom: 10px; }
+.org-name-row{ display: flex; gap: 8px; max-width: 360px; }
+.org-name-row input{ flex: 1; padding: 9px 12px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); font-size: 0.85rem; }
+.org-name-row input:focus{ outline: none; border-color: var(--teal); }
+.org-join-code-row{ margin-top: 10px; margin-bottom: 0; }
+.org-join-code-row strong{ font-family: var(--font-mono); letter-spacing: 0.05em; color: var(--ink); }
 .schedule-setup-panel{ display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
 .schedule-setup-col h3{ font-size: 0.9rem; margin-bottom: 4px; }
 .schedule-setup-col .field-hint{ margin-bottom: 12px; }
@@ -610,14 +623,15 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .chat-fab{
   position: fixed; bottom: 26px; right: 26px;
   width: 58px; height: 58px; border-radius: 50%;
-  background: var(--teal); color: var(--on-accent);
+  background: linear-gradient(135deg, var(--teal), var(--teal-2) 60%, var(--amber));
+  color: var(--on-accent);
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 14px 30px -8px rgba(31,111,114,0.55);
   z-index: 70;
-  transition: transform 0.15s ease, background 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
-.chat-fab:hover{ transform: translateY(-2px) scale(1.03); background: var(--teal-2); }
-.chat-fab svg{ width: 24px; height: 24px; }
+.chat-fab:hover{ transform: translateY(-2px) scale(1.03); box-shadow: 0 16px 34px -6px rgba(31,111,114,0.65); }
+.chat-fab svg{ width: 26px; height: 26px; }
 .fab-badge{
   position: absolute; top: -2px; right: -2px;
   background: var(--coral); color: var(--on-accent);

@@ -78,6 +78,27 @@
   </div>
 </div>
 
+<!-- ============ CODE ENTRY GATE (multi-tenant: a worker without a
+     personal link yet — typically their very first time — types the
+     short code their admin gave them to find their organization) ============ -->
+<div class="gate" id="codeEntryGate" hidden>
+  <div class="gate-inner">
+    <p class="gate-eyebrow">Join your team</p>
+    <h1 class="gate-title">Enter your organization's code</h1>
+    <p class="gate-sub">Your admin can find this on their Schedule tab, under "Schedule setup".</p>
+    <div class="worker-login-form" id="codeEntryForm">
+      <label>Join code
+        <input type="text" id="codeEntryInput" placeholder="e.g. A1B2C3D4" autocomplete="off" autocapitalize="characters" maxlength="8">
+      </label>
+      <p class="field-hint" id="codeEntryMsg"></p>
+      <div class="worker-login-actions">
+        <button type="button" class="btn btn-ghost" id="codeEntryBackBtn">Back</button>
+        <button type="button" class="btn btn-primary" id="codeEntrySubmitBtn">Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ ADMIN SIGN-IN GATE ============
      Only ever shown when this deployment has real Supabase auth configured
      (see supabase-auth.js). Without that config, clicking "Admin" on the
@@ -310,6 +331,15 @@
         </div>
 
         <div class="schedule-setup-wrap" id="scheduleSetupWrap" hidden>
+          <div class="schedule-setup-org">
+            <h3>Organization name</h3>
+            <p class="field-hint">Shown to a worker joining with your code, so they can confirm it's the right place before they join.</p>
+            <div class="org-name-row">
+              <input type="text" id="orgNameInput" placeholder="e.g. Mario's Pizza" maxlength="80">
+              <button class="btn btn-ghost btn-sm" type="button" id="orgNameSaveBtn">Save</button>
+            </div>
+            <p class="field-hint org-join-code-row">Join code: <strong id="orgJoinCodeDisplay">——</strong> <button class="link-btn-inline" type="button" id="copyJoinCodeBtn">Copy</button></p>
+          </div>
           <div class="schedule-setup-panel">
             <div class="schedule-setup-col">
               <h3 id="scheduleSetupDaysLabel">Working days</h3>
@@ -569,8 +599,8 @@
   <svg class="icon-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
 </button>
 
-<button class="chat-fab" id="chatFab" aria-label="Open SwiftFlow assistant">
-  <svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9L4 20.5z"/></svg>
+<button class="chat-fab" id="chatFab" aria-label="Open SwiftFlow AI assistant">
+  <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="m12 2 1.8 5.5a2.5 2.5 0 0 0 1.7 1.7L21 11l-5.5 1.8a2.5 2.5 0 0 0-1.7 1.7L12 20l-1.8-5.5a2.5 2.5 0 0 0-1.7-1.7L3 11l5.5-1.8a2.5 2.5 0 0 0 1.7-1.7z"/><path d="m19 3 .6 1.7L21 5l-1.4.6L19 7l-.6-1.4L17 5l1.4-.3z"/></svg>
   <span class="fab-badge" id="fabBadge" hidden>0</span>
 </button>
 
