@@ -464,20 +464,15 @@ module.exports = async function handler(req, res) {
       return sendJson(200, { path: mediaPath, token: signed.token, publicUrl: pub.publicUrl });
     }
 
-    // Shared channel — both admin and worker post here.
-    if (resource === "chat" && req.method === "POST") {
-      var channel = parts[2];
-      var cBody = await readBody(req);
-      if (!data.chat[channel]) data.chat[channel] = [];
-      data.chat[channel].push(cBody);
-      await saveOrg(orgId, data);
-      return sendJson(200, cBody);
-    }
-
     // Deleting a message: an admin can remove anything; a worker can only
     // remove their own (matched by authorKey against the invite token that
     // resolved this request — workers have no login of their own to check
     // against, so the token standing in for "who is this" is what's used).
+    // Must be checked before the plain POST /chat/:channel route below,
+    // which has no guard on parts[3] and would otherwise swallow this as
+    // "post a new message to channel 'general' with a stray /delete after
+    // it" — silently accepting the request while doing nothing but append
+    // whatever body came with it, instead of ever deleting the message.
     if (resource === "chat" && parts[3] === "delete" && req.method === "POST") {
       var delChannel = parts[2];
       var delBody = await readBody(req);
@@ -489,6 +484,16 @@ module.exports = async function handler(req, res) {
       data.chat[delChannel] = msgs.filter((m) => m.id !== delBody.id);
       await saveOrg(orgId, data);
       return sendJson(200, { removed: delBody.id });
+    }
+
+    // Shared channel — both admin and worker post here.
+    if (resource === "chat" && req.method === "POST") {
+      var channel = parts[2];
+      var cBody = await readBody(req);
+      if (!data.chat[channel]) data.chat[channel] = [];
+      data.chat[channel].push(cBody);
+      await saveOrg(orgId, data);
+      return sendJson(200, cBody);
     }
 
     return sendJson(404, { error: "unknown endpoint" });
