@@ -42,6 +42,7 @@
   --radius-sm: 9px;
   --sidebar-w: 248px;
   --topbar-h: 64px;
+  --bottom-nav-h: 62px;
 
   --shadow-sm: 0 1px 2px rgba(18,32,61,0.05), 0 1px 4px rgba(18,32,61,0.05);
   --shadow-md: 0 10px 24px -12px rgba(18,32,61,0.18), 0 2px 8px -3px rgba(18,32,61,0.08);
@@ -135,6 +136,10 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
 .gate-title{ font-family: var(--font-display); font-size: clamp(1.6rem, 4vw, 2.3rem); color: var(--brand-text); margin-bottom: 10px; }
 .gate-sub{ color: var(--brand-text-dim); margin-bottom: 36px; font-size: 0.98rem; }
 .gate-grid{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+#gateGrid{ grid-template-columns: repeat(2, 1fr); max-width: 640px; margin: 0 auto; }
+@media (max-width: 560px){
+  #gateGrid{ grid-template-columns: 1fr; }
+}
 .gate-card{
   background: var(--brand-ink-2);
   border: 1.5px solid rgba(255,255,255,0.08);
@@ -149,6 +154,27 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
 .gate-card svg{ width: 26px; height: 26px; color: var(--amber); }
 .gate-card-label{ font-size: 0.88rem; font-weight: 600; }
 .gate-card-sub{ font-size: 0.72rem; color: var(--brand-text-dim); }
+
+/* Org-type gate specifically (role-gate's Admin/Worker cards keep the
+   plain centered .gate-card look above) — a compact row layout with an
+   icon swatch and a trailing chevron, cycling three accent colors instead
+   of one-hue-per-card. */
+.gate-card.is-org-type{
+  flex-direction: row;
+  align-items: center;
+  text-align: left;
+  gap: 14px;
+  padding: 14px 16px;
+}
+.gate-card-icon{
+  width: 42px; height: 42px; border-radius: 11px;
+  background: var(--card-tint);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.gate-card-icon svg{ width: 21px; height: 21px; color: var(--card-accent); }
+.gate-card-body{ display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.gate-card-chevron{ margin-left: auto; width: 17px; height: 17px; color: var(--brand-text-dim); flex-shrink: 0; }
 
 @media (max-width: 760px){
   .gate-grid{ grid-template-columns: repeat(2, 1fr); }
@@ -641,26 +667,44 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
   border: 2px solid var(--paper);
 }
 
+/* The assistant used to be a small box anchored over the bottom-right
+   corner — close enough to real content to visually collide with it (the
+   Team Chat panel's own send button, for one). It's a real, capable tool
+   now, not an FAQ tooltip, so it gets a proper full section: a centered
+   modal over a dimmed backdrop on desktop, true edge-to-edge full-screen
+   on mobile — never layered awkwardly over whatever's underneath. */
+.chat-widget-backdrop{
+  position: fixed; inset: 0;
+  background: rgba(15,23,41,0.5);
+  z-index: 89;
+  opacity: 0; visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0.2s;
+}
+.chat-widget-backdrop.is-open{ opacity: 1; visibility: visible; }
+
 .chat-widget{
   position: fixed;
-  bottom: 98px; right: 26px;
-  width: 340px;
-  max-width: calc(100vw - 40px);
-  height: 440px;
-  max-height: calc(100vh - 140px);
+  inset: 0;
+  margin: auto;
+  width: min(560px, calc(100vw - 48px));
+  height: min(720px, calc(100vh - 64px));
   background: var(--paper-2);
-  border-radius: 18px;
-  box-shadow: 0 30px 60px -18px rgba(18,32,61,0.4);
+  border-radius: 20px;
+  box-shadow: 0 40px 90px -20px rgba(18,32,61,0.5);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 70;
+  z-index: 90;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(16px) scale(0.98);
+  transform: scale(0.97);
   transition: opacity 0.2s ease, transform 0.2s ease, visibility 0.2s;
 }
-.chat-widget.is-open{ opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+.chat-widget.is-open{ opacity: 1; visibility: visible; transform: scale(1); }
+
+@media (max-width: 680px){
+  .chat-widget{ width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+}
 
 .chat-widget-head{ background: var(--brand-ink); color: var(--brand-text); padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; }
 .chat-widget-title{ font-weight: 600; font-size: 0.92rem; }
@@ -757,6 +801,12 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
   .team-grid{ grid-template-columns: repeat(3, 1fr); }
 }
 
+/* ================= Mobile bottom nav =================
+   Fast access to the sections used most, without giving up the full
+   sidebar (still one hamburger tap away via "More") — shown only below
+   the same width the sidebar collapses at, so the two never compete. */
+.bottom-nav{ display: none; }
+
 @media (max-width: 960px){
   .sidebar{ transform: translateX(-100%); box-shadow: 20px 0 50px rgba(0,0,0,0.2); }
   .sidebar.is-open{ transform: translateX(0); }
@@ -764,9 +814,29 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
   .sidebar-overlay.is-open{ display: block; }
   .main{ margin-left: 0; }
   .hamburger{ display: flex; }
-  .content{ padding: 20px; }
+  .content{ padding: 20px; padding-bottom: calc(20px + var(--bottom-nav-h)); }
   .chat-layout{ grid-template-columns: 1fr; height: auto; }
   .channel-list{ flex-direction: row; overflow-x: auto; }
+
+  .bottom-nav{
+    display: flex;
+    position: fixed; left: 0; right: 0; bottom: 0;
+    height: var(--bottom-nav-h);
+    background: var(--paper-2);
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -8px 24px -12px rgba(18,32,61,0.15);
+    z-index: 65;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .bottom-nav-btn{
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: var(--slate-2);
+    font-size: 0.68rem; font-weight: 600;
+  }
+  .bottom-nav-btn svg{ width: 21px; height: 21px; }
+  .bottom-nav-btn.is-active{ color: var(--teal); }
+  .chat-fab{ bottom: calc(var(--bottom-nav-h) + 14px); }
 }
 
 @media (max-width: 680px){
@@ -779,8 +849,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
   .swap-card{ flex-direction: column; align-items: stretch; }
   .swap-actions{ justify-content: flex-end; }
   .worker-content{ padding: 16px; }
-  .chat-widget{ right: 12px; left: 12px; width: auto; bottom: 88px; }
-  .chat-fab{ right: 18px; bottom: 18px; }
+  .chat-fab{ right: 18px; bottom: calc(var(--bottom-nav-h) + 14px); }
   .notif-panel{ right: -60px; width: 280px; }
 }
 

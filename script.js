@@ -104,15 +104,19 @@
      because a church's week revolves around Sunday services rather
      than a uniform daily shift grid.
   --------------------------------------------- */
+  // "accent" picks a card's icon-box tint on the org-type gate — cycling
+  // through the app's own three brand colors rather than a different
+  // saturated hue per card, so eight cards read as one cohesive palette
+  // instead of a rainbow.
   var ORG_TYPES = {
-    business:   { label: "Business",        icon: "briefcase", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Front Desk", "Kitchen", "Floor", "Security", "Warehouse"] },
-    church:     { label: "Church",           icon: "church",    mode: "church", services: ["First Service", "Second Service", "Youth Service", "Midweek Service"], duties: ["Usher", "Greeter", "Choir", "Media & Sound", "Parking Team", "Children's Ministry", "Security"] },
-    hospital:   { label: "Hospital",         icon: "pulse",     mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Nursing", "Reception", "Security", "Housekeeping", "Lab"] },
-    school:     { label: "School",           icon: "book",      mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri"], duties: ["Front Office", "Cafeteria", "Security", "Custodial", "Bus Duty"] },
-    hotel:      { label: "Hotel",            icon: "bed",       mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Front Desk", "Housekeeping", "Kitchen", "Security", "Concierge"] },
-    restaurant: { label: "Restaurant",       icon: "utensils",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Host", "Kitchen", "Server", "Bar", "Dish"] },
-    security:   { label: "Security Company", icon: "shield",    mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Gate", "Patrol", "CCTV Monitor", "Response Team"] },
-    volunteer:  { label: "Volunteer / NGO",  icon: "hand",      mode: "grid",   days: ["Mon","Wed","Fri","Sat"], duties: ["Outreach", "Logistics", "Registration", "Distribution"] }
+    business:   { label: "Business",        icon: "briefcase", accent: "teal",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Front Desk", "Kitchen", "Floor", "Security", "Warehouse"] },
+    church:     { label: "Church",           icon: "church",    accent: "amber", mode: "church", services: ["First Service", "Second Service", "Youth Service", "Midweek Service"], duties: ["Usher", "Greeter", "Choir", "Media & Sound", "Parking Team", "Children's Ministry", "Security"] },
+    hospital:   { label: "Hospital",         icon: "pulse",     accent: "coral", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Nursing", "Reception", "Security", "Housekeeping", "Lab"] },
+    school:     { label: "School",           icon: "book",      accent: "teal",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri"], duties: ["Front Office", "Cafeteria", "Security", "Custodial", "Bus Duty"] },
+    hotel:      { label: "Hotel",            icon: "bed",       accent: "amber", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Front Desk", "Housekeeping", "Kitchen", "Security", "Concierge"] },
+    restaurant: { label: "Restaurant",       icon: "utensils",  accent: "coral", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Host", "Kitchen", "Server", "Bar", "Dish"] },
+    security:   { label: "Security Company", icon: "shield",    accent: "teal",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Gate", "Patrol", "CCTV Monitor", "Response Team"] },
+    volunteer:  { label: "Volunteer / NGO",  icon: "hand",      accent: "amber", mode: "grid",   days: ["Mon","Wed","Fri","Sat"], duties: ["Outreach", "Logistics", "Registration", "Distribution"] }
   };
   var GATE_ICONS = {
     briefcase: '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
@@ -147,14 +151,30 @@
   var orgGate = $("#orgGate");
   var gateGrid = $("#gateGrid");
 
+  // Fixed rgba overlays rather than the theme-flipping --*-tint variables:
+  // the org-type gate's background is always dark navy regardless of the
+  // site's light/dark setting, so the icon swatch needs a tint that holds
+  // up against that specifically, not one tuned for a light paper surface.
+  var GATE_ACCENTS = {
+    teal:  { fg: "var(--teal)",  bg: "rgba(31,111,114,0.28)" },
+    amber: { fg: "var(--amber)", bg: "rgba(235,163,59,0.22)" },
+    coral: { fg: "var(--coral)", bg: "rgba(219,90,66,0.22)" }
+  };
+
   function buildGate() {
     if (!gateGrid) return;
     gateGrid.innerHTML = "";
     Object.keys(ORG_TYPES).forEach(function (key) {
       var cfg = ORG_TYPES[key];
+      var accent = GATE_ACCENTS[cfg.accent] || GATE_ACCENTS.teal;
       var sub = cfg.mode === "church" ? cfg.services.slice(0, 2).join(" · ") + "…" : cfg.days.join(" · ");
-      var card = el("button", "gate-card");
-      card.innerHTML = GATE_ICONS[cfg.icon] + "<span class='gate-card-label'>" + cfg.label + "</span><span class='gate-card-sub'>" + sub + "</span>";
+      var card = el("button", "gate-card is-org-type");
+      card.style.setProperty("--card-accent", accent.fg);
+      card.style.setProperty("--card-tint", accent.bg);
+      card.innerHTML =
+        "<span class='gate-card-icon'>" + GATE_ICONS[cfg.icon] + "</span>" +
+        "<span class='gate-card-body'><span class='gate-card-label'>" + cfg.label + "</span><span class='gate-card-sub'>" + sub + "</span></span>" +
+        "<svg class='gate-card-chevron' viewBox='0 0 24 24'><path d='M9 5l7 7-7 7'/></svg>";
       card.addEventListener("click", function () { selectOrg(key); });
       gateGrid.appendChild(card);
     });
@@ -196,6 +216,7 @@
   function refreshOrgDependentUI() {
     var cfg = orgConfig();
     $("#navScheduleLabel").textContent = cfg.mode === "church" ? "Sunday Services" : "Schedule";
+    if ($("#bottomNavScheduleLabel")) $("#bottomNavScheduleLabel").textContent = cfg.mode === "church" ? "Services" : "Schedule";
     $("#sidebarOrgLabel").textContent = cfg.label;
     $("#scheduleLede").textContent = team.length === 0
       ? "Add workers on the Team tab to start building your schedule."
@@ -237,6 +258,7 @@
   var sidebarClose = $("#sidebarClose");
   var topbarTitle = $("#topbarTitle");
   var navBtns = $all(".nav-btn");
+  var bottomNavBtns = $all(".bottom-nav-btn[data-view]");
   var views = $all(".view");
 
   var VIEW_TITLES = {
@@ -263,12 +285,18 @@
       v.classList.toggle("is-active", match);
     });
     navBtns.forEach(function (b) { b.classList.toggle("is-active", b.dataset.view === name); });
+    bottomNavBtns.forEach(function (b) { b.classList.toggle("is-active", b.dataset.view === name); });
     topbarTitle.textContent = name === "schedule" ? $("#navScheduleLabel").textContent : (VIEW_TITLES[name] || "SwiftFlow");
     closeSidebar();
   }
   navBtns.forEach(function (btn) {
     btn.addEventListener("click", function () { showView(btn.dataset.view); });
   });
+  bottomNavBtns.forEach(function (btn) {
+    btn.addEventListener("click", function () { showView(btn.dataset.view); });
+  });
+  var bottomNavMoreBtn = $("#bottomNavMoreBtn");
+  if (bottomNavMoreBtn) bottomNavMoreBtn.addEventListener("click", openSidebar);
 
   /* ---------------------------------------------
      2. Notifications (bell dropdown)
@@ -1683,10 +1711,20 @@
     fabBadge.hidden = n === 0;
     fabBadge.textContent = n;
   }
-  function openWidget() { chatWidget.classList.add("is-open"); setUnread(0); }
-  function closeWidget() { chatWidget.classList.remove("is-open"); }
+  var chatWidgetBackdrop = $("#chatWidgetBackdrop");
+  function openWidget() {
+    chatWidget.classList.add("is-open");
+    if (chatWidgetBackdrop) chatWidgetBackdrop.classList.add("is-open");
+    setUnread(0);
+    chatWidgetInput.focus();
+  }
+  function closeWidget() {
+    chatWidget.classList.remove("is-open");
+    if (chatWidgetBackdrop) chatWidgetBackdrop.classList.remove("is-open");
+  }
   chatFab.addEventListener("click", function () { chatWidget.classList.contains("is-open") ? closeWidget() : openWidget(); });
   chatWidgetClose.addEventListener("click", closeWidget);
+  if (chatWidgetBackdrop) chatWidgetBackdrop.addEventListener("click", closeWidget);
 
   function findWorkerByName(nameFragment) {
     var frag = nameFragment.trim().toLowerCase();
@@ -1986,7 +2024,32 @@
     else if (accessMode === "worker" && currentWorker) actionResult = tryWorkerCommand(raw, lower);
     if (actionResult) return actionResult;
 
-    // Fall back to informational, read-only answers.
+    // Fall back to informational, read-only answers — actually answering
+    // from live app state where there's state to answer from, rather than
+    // treating anything that isn't a recognized command as a dead end.
+    var cfgQ = orgConfig();
+
+    if (/what (kind of |type of )?org|what mode|how (does|is) (the )?schedul(e|ing) work|structure/.test(lower)) {
+      return cfgQ.mode === "church"
+        ? "You're set up as a Church: ministry duties (" + cfgQ.duties.slice(0, 3).join(", ") + (cfgQ.duties.length > 3 ? "…" : "") + ") as rows, services (" + cfgQ.services.join(", ") + ") as columns. Change it anytime from \"Switch organization type\" in the sidebar."
+        : "You're set up as " + escapeHtml(orgConfig().label || "a business") + ": each worker gets a duty per day (" + cfgQ.days.join(", ") + "). Change it anytime from \"Switch organization type\" in the sidebar.";
+    }
+    if (/job types?|what (roles|duties)/.test(lower) && accessMode === "admin") {
+      return "Your current job types: " + cfgQ.duties.map(function (d) { return escapeHtml(d); }).join(", ") + ". Add more with \"add job type X\", or from Schedule setup on the Schedule tab.";
+    }
+    if (/how (do i|to) auto.?assign|what does auto.?assign do/.test(lower)) {
+      return "It fills every open slot by matching each worker's role to the duty needed, rotating fairly so no one gets stacked while someone else gets none. If nobody has an exact role match for a slot, it repeats whoever's least-loaded rather than leave it empty, and tells you when it did. It never overwrites anything you've already set by hand.";
+    }
+    if (/how (do i|to) add (a )?worker|invite (a )?worker/.test(lower) && accessMode === "admin") {
+      return "Team tab → \"Add worker\", or just tell me \"add worker Sam as Usher\" right here. " + (window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured() ? "They then get their own invite link from their Team card — no PIN needed." : "They get a PIN from their Team card to sign in with.");
+    }
+    if (/join code|join link|how do workers (join|sign in|get in)/.test(lower) && accessMode === "admin") {
+      if (window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) return "Two ways: send someone's personal invite link from their Team card (no PIN), or share your organization's join code/link — say \"join code\" or \"join link\" and I'll give it to you.";
+      return "Add them on the Team tab — their card shows a PIN they sign in with under \"I'm a worker\".";
+    }
+    if (/how many (workers|people|staff)|roster size|team size/.test(lower)) {
+      return team.length === 0 ? "Your roster is empty — add your first worker from the Team tab." : ("You have " + team.length + " " + (team.length === 1 ? "person" : "people") + " on the roster.");
+    }
     if (lower.indexOf("open") !== -1 || lower.indexOf("coverage") !== -1) {
       var open = parseInt($("#statOpenCount").textContent, 10) || 0;
       return open === 0 ? "Everything's covered right now — nice work." : ("You've got " + open + " " + ($("#statOpenLabel").textContent.toLowerCase()) + " right now.");
@@ -1995,15 +2058,29 @@
       var pending = swaps.filter(function (s) { return s.status === "pending"; }).length;
       return pending === 0 ? "No pending swap requests." : (pending + " swap request" + (pending === 1 ? "" : "s") + " waiting on approval.");
     }
+    if (/announcement/.test(lower)) {
+      if (announcements.length === 0) return "No announcements posted yet.";
+      return "Latest: \"" + escapeHtml(announcements[0].title) + "\" — " + announcements.length + " total. " + (accessMode === "admin" ? "Post one with \"announce: Title — message\"." : "Check the Announcements tab for the rest.");
+    }
+    if (/who'?s (clocked|checked) in|attendance (today|rate)/.test(lower) && accessMode === "admin") {
+      var clockedIn = attendanceLog.filter(function (a) { return a.status === "on-time" || a.status === "late"; }).length;
+      return attendanceLog.length === 0 ? "No attendance logged yet today." : (clockedIn + " logged in today out of " + attendanceLog.length + " entries. Full log's on the Attendance tab.");
+    }
     if (lower.indexOf("team") !== -1 || lower.indexOf("worker") !== -1) {
       return team.length === 0 ? "Your roster is empty — add your first worker from the Team tab." : ("You have " + team.length + " people on the roster.");
     }
+    if (/what can (this app|swiftflow|you) do|what (is|does) (this|swiftflow)/.test(lower)) {
+      return accessMode === "worker"
+        ? "This is where you check your shifts, clock in and out, request coverage swaps, and keep up with team chat and announcements. Ask me to do any of that, or type \"help\" for exact phrasings."
+        : "SwiftFlow runs your schedule end to end: add workers, build the schedule (by hand or with auto-assign), handle shift swaps, track attendance, and keep everyone in the loop with chat and announcements. Type \"help\" for commands I can run directly.";
+    }
+
     // A generic "I didn't understand" is a dead end — give the closest
     // couple of things it does understand instead, so the miss is still
     // useful.
     return accessMode === "worker"
-      ? "I didn't catch that. Try \"clock me in\", \"my shifts\", or \"request a swap\" — or type \"help\" for everything."
-      : "I didn't catch that. Try \"add worker Sam as Usher\", \"who's on shift\", or \"auto-assign open shifts\" — or type \"help\" for everything.";
+      ? "I didn't catch that. Try \"clock me in\", \"my shifts\", \"request a swap\", or ask me something like \"what can this app do\" — or type \"help\" for everything."
+      : "I didn't catch that. Try \"add worker Sam as Usher\", \"who's on shift\", \"auto-assign open shifts\", or ask me something like \"how does auto-assign work\" — or type \"help\" for everything.";
   }
 
   function sendWidgetMessage() {

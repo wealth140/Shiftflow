@@ -506,6 +506,35 @@
       </section>
 
     </main>
+
+    <!-- ============ MOBILE BOTTOM NAV ============
+         Quick access to the sections used most; everything else (Swaps,
+         Attendance, Announcements, Reports) stays reachable through "More",
+         which opens the same sidebar the hamburger menu already does —
+         nothing here replaces the sidebar, it's shown only below a width
+         breakpoint (see style.css) alongside it. -->
+    <nav class="bottom-nav" id="bottomNav" aria-label="Quick sections">
+      <button class="bottom-nav-btn is-active" data-view="overview">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span>Home</span>
+      </button>
+      <button class="bottom-nav-btn" data-view="schedule">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2"/><line x1="3" y1="9.5" x2="21" y2="9.5"/><line x1="8" y1="3" x2="8" y2="6"/><line x1="16" y1="3" x2="16" y2="6"/></svg>
+        <span id="bottomNavScheduleLabel">Schedule</span>
+      </button>
+      <button class="bottom-nav-btn" data-view="team">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3.6 2.5-6 5.5-6s5.5 2.4 5.5 6"/><circle cx="17" cy="9" r="2.4"/><path d="M15 20c.2-2.8 1.8-5 4.5-5"/></svg>
+        <span>Team</span>
+      </button>
+      <button class="bottom-nav-btn" data-view="chat">
+        <svg viewBox="0 0 24 24"><path d="M4 5.5h16v11H9L4 20.5z"/></svg>
+        <span>Chat</span>
+      </button>
+      <button class="bottom-nav-btn" id="bottomNavMoreBtn">
+        <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        <span>More</span>
+      </button>
+    </nav>
   </div>
 </div>
 
@@ -604,6 +633,7 @@
   <span class="fab-badge" id="fabBadge" hidden>0</span>
 </button>
 
+<div class="chat-widget-backdrop" id="chatWidgetBackdrop"></div>
 <div class="chat-widget" id="chatWidget">
   <div class="chat-widget-head">
     <div>
