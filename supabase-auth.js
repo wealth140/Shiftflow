@@ -1,5 +1,5 @@
 /* ================================================
-   SwiftFlow — admin authentication (optional)
+   Onixora — admin authentication (optional)
 
    Only does anything when window.SHIFTFLOW_SUPABASE_URL and
    window.SHIFTFLOW_SUPABASE_ANON_KEY are set (see index.html and the
@@ -43,6 +43,13 @@ window.ShiftFlowAuth = (function () {
     return getSession().then(function (s) { return s ? s.access_token : null; });
   }
 
+  function getAdminIdentity() {
+    return getSession().then(function (s) {
+      if (!s || !s.user) return null;
+      return { name: (s.user.user_metadata && s.user.user_metadata.full_name) || null, email: s.user.email || null };
+    });
+  }
+
   function signInWithPassword(email, password) {
     if (!client) return Promise.resolve({ error: "This deployment doesn't have admin sign-in configured." });
     return client.auth.signInWithPassword({ email: email, password: password }).then(function (r) {
@@ -50,19 +57,25 @@ window.ShiftFlowAuth = (function () {
     });
   }
 
-  function signUp(email, password) {
+  function signUp(email, password, fullName) {
     if (!client) return Promise.resolve({ error: "This deployment doesn't have admin sign-in configured." });
-    // Without this, Supabase falls back to the project's "Site URL" dashboard
-    // setting for the confirmation email's link — which is easy to leave
-    // pointed at whatever it defaulted to (often localhost) and forget
-    // about. Saying explicitly where to come back to means the link is
-    // right regardless of that setting, as long as this exact URL is also
-    // added to the project's Redirect URLs allow-list (a Supabase security
-    // requirement — see README "Turning on admin sign-in").
+    // Without emailRedirectTo, Supabase falls back to the project's "Site
+    // URL" dashboard setting for the confirmation email's link — which is
+    // easy to leave pointed at whatever it defaulted to (often localhost)
+    // and forget about. Saying explicitly where to come back to means the
+    // link is right regardless of that setting, as long as this exact URL
+    // is also added to the project's Redirect URLs allow-list (a Supabase
+    // security requirement — see README "Turning on admin sign-in").
+    // full_name rides in user_metadata rather than a separate profiles
+    // table — the only place it's read back is the signed-in admin's own
+    // sidebar/avatar, which the auth session already carries.
     return client.auth.signUp({
       email: email,
       password: password,
-      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+      options: {
+        emailRedirectTo: window.location.origin + window.location.pathname,
+        data: fullName ? { full_name: fullName } : undefined
+      }
     }).then(function (r) {
       var needsConfirmation = !!(r.data && r.data.user && !r.data.session);
       return { error: r.error ? r.error.message : null, session: r.data && r.data.session, needsConfirmation: needsConfirmation };
@@ -127,6 +140,7 @@ window.ShiftFlowAuth = (function () {
     isConfigured: isConfigured,
     getSession: getSession,
     getAccessToken: getAccessToken,
+    getAdminIdentity: getAdminIdentity,
     signInWithPassword: signInWithPassword,
     signUp: signUp,
     resendConfirmation: resendConfirmation,

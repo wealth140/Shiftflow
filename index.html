@@ -16,15 +16,15 @@
   })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SwiftFlow — Dashboard</title>
+<title>Onixora — Dashboard</title>
 <meta name="description" content="Shift scheduling, duty rotation, swaps, attendance and team chat — restructured around whatever you run, from a restaurant's weekly grid to a church's Sunday service lineup.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2312203D'/%3E%3Cpath d='M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z' fill='%23EBA33B' stroke='%23EBA33B' stroke-width='1' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%2312203D'/%3E%3Cdefs%3E%3ClinearGradient id='g' x1='3' y1='3' x2='21' y2='21' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0%25' stop-color='%234361EE'/%3E%3Cstop offset='55%25' stop-color='%238B5CF6'/%3E%3Cstop offset='100%25' stop-color='%2314B8A6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='12' cy='12' r='7.3' fill='none' stroke='url(%23g)' stroke-width='2.6'/%3E%3Ccircle cx='12' cy='5.2' r='2.3' fill='url(%23g)'/%3E%3Ccircle cx='6' cy='16.3' r='2' fill='url(%23g)'/%3E%3Ccircle cx='18' cy='16.3' r='2' fill='url(%23g)'/%3E%3C/svg%3E">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#12203D">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="SwiftFlow">
+<meta name="apple-mobile-web-app-title" content="Onixora">
 <!-- If you host this frontend separately from server.js (e.g. GitHub Pages
      for the static files, a Node host like Render/Railway for the backend),
      uncomment and set this to your backend's URL before api.js loads:
@@ -52,7 +52,7 @@
   <div class="gate-inner">
     <p class="gate-eyebrow">Before we start</p>
     <h1 class="gate-title">What are you scheduling for?</h1>
-    <p class="gate-sub">SwiftFlow restructures itself around what you run — a church's Sunday service lineup looks nothing like a restaurant's weekly shift grid.</p>
+    <p class="gate-sub">Onixora restructures itself around what you run — a church's Sunday service lineup looks nothing like a restaurant's weekly shift grid.</p>
     <div class="gate-grid" id="gateGrid"></div>
   </div>
 </div>
@@ -60,18 +60,18 @@
 <!-- ============ ROLE GATE (returning visitors: admin or worker?) ============ -->
 <div class="gate" id="roleGate" hidden>
   <div class="gate-inner">
-    <p class="gate-eyebrow">Access</p>
-    <h1 class="gate-title">How are you using SwiftFlow?</h1>
-    <p class="gate-sub">Admins manage the whole schedule and team. Workers see just their own shifts, clock in, and can request coverage.</p>
+    <p class="gate-eyebrow">Welcome</p>
+    <h1 class="gate-title">Manage your people, schedules and daily operations in one place</h1>
+    <p class="gate-sub">Onixora adapts to how your organization runs — a church's Sunday service lineup looks nothing like a restaurant's weekly shift grid.</p>
     <div class="gate-grid role-gate-grid">
       <button class="gate-card" id="roleAdminBtn">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-        <span class="gate-card-label">Admin</span>
+        <span class="gate-card-label">Create an organization</span>
         <span class="gate-card-sub">Full schedule &amp; team control</span>
       </button>
       <button class="gate-card" id="roleWorkerBtn">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg>
-        <span class="gate-card-label">I'm a worker</span>
+        <span class="gate-card-label">Join an organization</span>
         <span class="gate-card-sub">View my shifts &amp; clock in</span>
       </button>
     </div>
@@ -88,7 +88,7 @@
     <p class="gate-sub">Your admin can find this on their Schedule tab, under "Schedule setup".</p>
     <div class="worker-login-form" id="codeEntryForm">
       <label>Join code
-        <input type="text" id="codeEntryInput" placeholder="e.g. A1B2C3D4" autocomplete="off" autocapitalize="characters" maxlength="8">
+        <input type="text" id="codeEntryInput" placeholder="e.g. GRACE-4821" autocomplete="off" autocapitalize="characters" maxlength="16">
       </label>
       <p class="field-hint" id="codeEntryMsg"></p>
       <div class="worker-login-actions">
@@ -109,6 +109,9 @@
     <h1 class="gate-title" id="adminAuthTitle">Sign in</h1>
     <p class="gate-sub" id="adminAuthSub">Use your admin account to manage this organization's schedule.</p>
     <div class="worker-login-form" id="adminAuthForm">
+      <label id="adminAuthNameField" hidden>Your name
+        <input type="text" id="adminAuthName" placeholder="e.g. Sam Whitfield" autocomplete="name">
+      </label>
       <label>Email
         <input type="email" id="adminAuthEmail" placeholder="you@example.com" autocomplete="username">
       </label>
@@ -156,6 +159,25 @@
   </div>
 </div>
 
+<!-- ============ ADMIN ONBOARDING (first organization only) ============
+     Shown once, right after a brand-new admin creates their first
+     organization — not on every "switch organization type". Walks
+     through the setup checklist and hands off to the Team tab. -->
+<div class="gate" id="onboardingGate" hidden>
+  <div class="gate-inner">
+    <p class="gate-eyebrow">You're all set up</p>
+    <h1 class="gate-title">Welcome to Onixora</h1>
+    <p class="gate-sub">Here's what's done, and what's next.</p>
+    <ul class="onboarding-checklist">
+      <li class="is-done"><span class="onboarding-check">✓</span>Organization created</li>
+      <li><span class="onboarding-check">2</span>Add your team</li>
+      <li><span class="onboarding-check">3</span>Create your first schedule</li>
+      <li><span class="onboarding-check">4</span>Invite your workers</li>
+    </ul>
+    <button type="button" class="btn btn-primary btn-lg" id="onboardingContinueBtn">Add your team</button>
+  </div>
+</div>
+
 <!-- ============ WORKER SIGN-IN GATE ============ -->
 <div class="gate" id="workerLoginGate" hidden>
   <div class="gate-inner">
@@ -188,7 +210,7 @@
   <!-- ============ SIDEBAR ============ -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
-      <span class="sidebar-logo"><svg class="sidebar-logo-icon" viewBox="0 0 24 24"><path d="M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z"/></svg>SwiftFlow</span>
+      <span class="sidebar-logo"><svg class="sidebar-logo-icon" viewBox="0 0 24 24"><defs><linearGradient id="onixGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#4361EE"/><stop offset="55%" stop-color="#8B5CF6"/><stop offset="100%" stop-color="#14B8A6"/></linearGradient></defs><circle cx="12" cy="12" r="8.3" fill="none" stroke="url(#onixGrad)" stroke-width="3"/><circle cx="12" cy="4" r="2.6" fill="url(#onixGrad)"/><circle cx="5" cy="16.5" r="2.2" fill="url(#onixGrad)"/><circle cx="19" cy="16.5" r="2.2" fill="url(#onixGrad)"/></svg>Onixora</span>
       <button class="sidebar-close" id="sidebarClose" aria-label="Close menu">
         <svg viewBox="0 0 24 24"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
       </button>
@@ -232,9 +254,9 @@
 
     <div class="sidebar-bottom">
       <div class="sidebar-user">
-        <span class="avatar">TA</span>
+        <span class="avatar" id="sidebarUserAvatar">TA</span>
         <div>
-          <p class="sidebar-user-name">Team Admin</p>
+          <p class="sidebar-user-name" id="sidebarUserName">Team Admin</p>
           <p class="sidebar-user-role" id="sidebarOrgLabel">Set up your organization</p>
         </div>
       </div>
@@ -264,7 +286,7 @@
             <div class="notif-list" id="notifList"></div>
           </div>
         </div>
-        <span class="avatar avatar-sm">TA</span>
+        <span class="avatar avatar-sm" id="topbarUserAvatar">TA</span>
       </div>
     </header>
 
@@ -541,7 +563,7 @@
 <!-- ============ WORKER APP SHELL ============ -->
 <div class="worker-shell" id="workerShell" hidden>
   <header class="worker-topbar">
-    <span class="worker-topbar-logo"><svg class="sidebar-logo-icon" viewBox="0 0 24 24"><path d="M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z"/></svg>SwiftFlow</span>
+    <span class="worker-topbar-logo"><svg class="sidebar-logo-icon" viewBox="0 0 24 24"><defs><linearGradient id="onixGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#4361EE"/><stop offset="55%" stop-color="#8B5CF6"/><stop offset="100%" stop-color="#14B8A6"/></linearGradient></defs><circle cx="12" cy="12" r="8.3" fill="none" stroke="url(#onixGrad)" stroke-width="3"/><circle cx="12" cy="4" r="2.6" fill="url(#onixGrad)"/><circle cx="5" cy="16.5" r="2.2" fill="url(#onixGrad)"/><circle cx="19" cy="16.5" r="2.2" fill="url(#onixGrad)"/></svg>Onixora</span>
     <div class="worker-topbar-right">
       <span class="worker-name" id="workerAppName"></span>
       <button class="btn btn-ghost btn-sm" id="workerLogoutBtn">Log out</button>
@@ -553,6 +575,7 @@
     <button class="worker-tab" data-wview="swaps">Request Swap</button>
     <button class="worker-tab" data-wview="chat">Team Chat</button>
     <button class="worker-tab" data-wview="announcements">Announcements</button>
+    <button class="worker-tab" data-wview="profile">Profile</button>
   </nav>
 
   <main class="worker-content">
@@ -618,6 +641,18 @@
       <div class="announce-list" id="workerAnnounceList"></div>
     </section>
 
+    <section class="wview" id="wview-profile" hidden>
+      <div class="panel profile-panel">
+        <span class="avatar profile-avatar" id="profileAvatar"></span>
+        <p class="profile-name" id="profileName"></p>
+        <p class="profile-role" id="profileRole"></p>
+        <div class="profile-fields">
+          <div class="profile-field"><span class="field-hint">Email</span><p id="profileEmail">—</p></div>
+          <div class="profile-field"><span class="field-hint">Organization</span><p id="profileOrgName">—</p></div>
+        </div>
+      </div>
+    </section>
+
   </main>
 </div>
 
@@ -628,7 +663,7 @@
   <svg class="icon-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></svg>
 </button>
 
-<button class="chat-fab" id="chatFab" aria-label="Open SwiftFlow AI assistant">
+<button class="chat-fab" id="chatFab" aria-label="Open Onixora AI assistant">
   <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="m12 2 1.8 5.5a2.5 2.5 0 0 0 1.7 1.7L21 11l-5.5 1.8a2.5 2.5 0 0 0-1.7 1.7L12 20l-1.8-5.5a2.5 2.5 0 0 0-1.7-1.7L3 11l5.5-1.8a2.5 2.5 0 0 0 1.7-1.7z"/><path d="m19 3 .6 1.7L21 5l-1.4.6L19 7l-.6-1.4L17 5l1.4-.3z"/></svg>
   <span class="fab-badge" id="fabBadge" hidden>0</span>
 </button>
@@ -637,7 +672,7 @@
 <div class="chat-widget" id="chatWidget">
   <div class="chat-widget-head">
     <div>
-      <p class="chat-widget-title">SwiftFlow Assistant</p>
+      <p class="chat-widget-title">Onixora Assistant</p>
       <p class="chat-widget-sub"><span class="live-dot"></span>Live</p>
     </div>
     <button class="chat-widget-close" id="chatWidgetClose" aria-label="Close">
@@ -646,7 +681,7 @@
   </div>
   <div class="chat-widget-body" id="chatWidgetBody"></div>
   <form class="chat-widget-input" id="chatWidgetForm">
-    <input type="text" id="chatWidgetInput" placeholder="Ask SwiftFlow...">
+    <input type="text" id="chatWidgetInput" placeholder="Ask Onixora...">
     <button type="button" id="chatWidgetSendBtn" aria-label="Send">
       <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4"/><path d="M20 4L14 20l-3-7-7-3z"/></svg>
     </button>

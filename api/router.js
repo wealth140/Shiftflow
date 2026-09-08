@@ -1,5 +1,5 @@
 /* ================================================
-   SwiftFlow — production API (Vercel + Supabase), multi-tenant
+   Onixora — production API (Vercel + Supabase), multi-tenant
 
    Every admin gets their own organization (their own team, schedule,
    swaps, attendance, chat, announcements) — completely separate from
@@ -39,7 +39,7 @@ const crypto = require("crypto");
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const EMAIL_FROM = process.env.EMAIL_FROM || "SwiftFlow <onboarding@resend.dev>";
+const EMAIL_FROM = process.env.EMAIL_FROM || "Onixora <onboarding@resend.dev>";
 
 var DEFAULT_ORG_DATA = {
   orgType: null, orgName: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
@@ -48,11 +48,18 @@ var DEFAULT_ORG_DATA = {
 };
 
 // A short, speakable stand-in for the org's uuid — nothing new to store,
-// just its first segment. Not cryptographically unique across an
-// unbounded number of orgs, but plenty for this app's scale, and it means
-// "join code" needs no schema migration or admin-facing setup step.
-function shortJoinCode(orgId) {
-  return String(orgId || "").replace(/-/g, "").slice(0, 8).toUpperCase();
+// derived from the org's own id and (when set) its name, e.g. "GRACE-4821".
+// Not cryptographically unique across an unbounded number of orgs, but
+// plenty for this app's scale, and it means a join code needs no schema
+// migration or separate admin-facing setup step. One consequence of
+// deriving it from the name: renaming an organization changes its code —
+// a reasonable trade-off for not needing to persist a separate value, but
+// worth knowing if an old, already-shared code stops validating.
+function shortJoinCode(orgId, orgName) {
+  var idHex = String(orgId || "").replace(/-/g, "").slice(0, 8) || "0";
+  var numericPart = (parseInt(idHex, 16) % 10000).toString().padStart(4, "0");
+  var namePart = String(orgName || "").trim().split(/\s+/)[0].replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 10);
+  return (namePart || "ORG") + "-" + numericPart;
 }
 
 function sendInviteEmail(toEmail, subject, text) {
@@ -190,7 +197,7 @@ module.exports = async function handler(req, res) {
       if (adminUser) {
         var org = await getOrgForAdmin(adminUser);
         if (!org) return sendJson(200, Object.assign({}, DEFAULT_ORG_DATA, { hasOrg: false }));
-        return sendJson(200, Object.assign({}, org.data, { hasOrg: true, orgId: org.id, joinCode: shortJoinCode(org.id) }));
+        return sendJson(200, Object.assign({}, org.data, { hasOrg: true, orgId: org.id, joinCode: shortJoinCode(org.id, org.data.orgName) }));
       }
       return sendJson(401, { error: "Sign in, or use your invite link." });
     }
@@ -204,6 +211,9 @@ module.exports = async function handler(req, res) {
        by hand) — whichever a worker actually has on them. */
     if (resource === "join-info" && req.method === "GET") {
       var joinOrgId = (req.query.org || "").toString().trim();
+      // Compared with hyphens stripped from both sides — shortJoinCode's
+      // output has one ("GRACE-4821"), and a human typing it back in might
+      // drop it, use a space, lowercase it, etc.
       var joinCode = (req.query.code || "").toString().trim().replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
       if (!joinOrgId && !joinCode) return sendJson(400, { error: "Missing org id or code." });
       var joinOrg = null;
@@ -214,7 +224,7 @@ module.exports = async function handler(req, res) {
         // No schema support for looking up by code directly — org count is
         // small enough at this app's scale that scanning ids is fine.
         const { data: candidates } = await supabase.from("organizations").select("id, data").limit(2000);
-        joinOrg = (candidates || []).find((o) => shortJoinCode(o.id) === joinCode) || null;
+        joinOrg = (candidates || []).find((o) => shortJoinCode(o.id, o.data.orgName).replace(/-/g, "") === joinCode) || null;
       }
       if (!joinOrg) return sendJson(404, { error: "That code or link isn't valid — ask your admin for a current one." });
       return sendJson(200, { orgId: joinOrg.id, orgType: joinOrg.data.orgType, orgName: joinOrg.data.orgName, jobTypes: joinOrg.data.jobTypes });
@@ -340,8 +350,8 @@ module.exports = async function handler(req, res) {
 
       var appUrl = req.headers.origin || ("https://" + req.headers.host);
       var inviteLink = appUrl + "/?invite=" + inviteWorker.token;
-      var subject = "Your SwiftFlow sign-in";
-      var text = "You're on the SwiftFlow schedule as " + inviteWorker.name + " (" + inviteWorker.role + ").\n" +
+      var subject = "Your Onixora sign-in";
+      var text = "You're on the Onixora schedule as " + inviteWorker.name + " (" + inviteWorker.role + ").\n" +
         "Open your personal link to see your shifts and clock in: " + inviteLink;
 
       var result = await sendInviteEmail(inviteWorker.email, subject, text);

@@ -1,4 +1,4 @@
-# SwiftFlow
+# Onixora
 
 A shift-scheduling app for businesses, churches, hospitals, schools, hotels,
 restaurants, security companies and volunteer teams — with duty rotation,
@@ -92,10 +92,10 @@ someone else gets none. It only ever fills gaps — anything you've already
 assigned by hand is left untouched, and any slot nobody's qualified for is
 left open for you to sort out manually.
 
-## How workers get into SwiftFlow
+## How workers get into Onixora
 
 There's no separate app to install — workers use the same URL you do. Every
-visit now starts by asking **"How are you using SwiftFlow?"**: Admin, or
+visit now starts by asking **"How are you using Onixora?"**: Admin, or
 "I'm a worker."
 
 - **Admin** goes straight into the full dashboard (everything described
@@ -125,7 +125,7 @@ someone actually trying to get in, treat that as a follow-up project, not
 something this build claims to solve.
 
 **Getting workers there in practice:** since the whole thing is one URL,
-put SwiftFlow behind real hosting (see "Hosting the frontend and backend
+put Onixora behind real hosting (see "Hosting the frontend and backend
 separately" below for GitHub Pages + a backend host) and text or email
 that link to your team. On a phone, "Add to Home Screen" from the browser
 share menu makes it open like an app icon without any install step.
@@ -195,15 +195,35 @@ else's data.
    drop policy if exists organizations_owner_all on public.organizations;
    create policy organizations_owner_all on public.organizations
      for all using (auth.uid() = owner_id) with check (auth.uid() = owner_id);
+
+   alter table public.worker_invite_tokens enable row level security;
+   drop policy if exists worker_invite_tokens_owner_all on public.worker_invite_tokens;
+   create policy worker_invite_tokens_owner_all on public.worker_invite_tokens
+     for all using (
+       exists (select 1 from public.organizations o where o.id = org_id and o.owner_id = auth.uid())
+     ) with check (
+       exists (select 1 from public.organizations o where o.id = org_id and o.owner_id = auth.uid())
+     );
    ```
    `organizations` holds one row per admin (their whole team/schedule/etc.
    as one JSONB blob, same shape `data.json` uses locally). The unique
    index enforces one organization per admin account. `worker_invite_tokens`
    is a fast lookup from a worker's personal link back to which
-   organization — and which worker — it belongs to. RLS is enabled as a
-   safety net (the backend uses the service_role key, which bypasses it
-   regardless, so this only matters if the anon key is ever queried
-   directly against these tables).
+   organization — and which worker — it belongs to.
+
+   **Isolation between organizations is enforced twice, on purpose:**
+   the API layer (`api/router.js`) resolves every request to exactly one
+   organization — an admin's own (from their verified session) or a
+   worker's (from their invite token) — and only ever reads/writes that
+   one row; nothing in the code path can reach across organizations. RLS
+   above is the second, independent layer: even if these tables were ever
+   queried directly with the anon key (they currently aren't — all real
+   traffic goes through the service_role-backed API, which bypasses RLS
+   by design), an admin's session could still only see their own
+   organization and its own invite tokens, never another's. The
+   service_role key itself lives only in the Vercel project's environment
+   variables and is never sent to the browser — only the anon key (meant
+   to be public) is baked into `index.html`.
 2. In **Authentication → Providers**, make sure **Email** is on (default).
    Optionally turn off "Confirm email" under **Authentication → Settings**
    if you don't want new admins to confirm their address first.

@@ -1,5 +1,5 @@
 /* ================================================
-   SwiftFlow — backend server
+   Onixora — backend server
    Zero dependencies — just Node's built-in http/fs.
    Run with:  node server.js
    Then open: http://localhost:3000
@@ -25,7 +25,7 @@ const DATA_FILE = path.join(ROOT, "data.json");
 // client (see emailInvite() in script.js) — the app still works with zero
 // configuration, real delivery is opt-in once you deploy.
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const EMAIL_FROM = process.env.EMAIL_FROM || "SwiftFlow <onboarding@resend.dev>";
+const EMAIL_FROM = process.env.EMAIL_FROM || "Onixora <onboarding@resend.dev>";
 
 function sendInviteEmail(toEmail, subject, text) {
   if (!RESEND_API_KEY) return Promise.resolve({ sent: false, reason: "no-email-service" });
@@ -185,8 +185,8 @@ async function handleApi(req, res, pathname) {
     if (!inviteWorker.email) return sendJson(res, 400, { sent: false, reason: "no-email-on-file" });
 
     var appUrl = (req.headers.origin) || ("http://" + req.headers.host);
-    var subject = "Your SwiftFlow sign-in";
-    var text = "You're on the SwiftFlow schedule as " + inviteWorker.name + " (" + inviteWorker.role + ").\n" +
+    var subject = "Your Onixora sign-in";
+    var text = "You're on the Onixora schedule as " + inviteWorker.name + " (" + inviteWorker.role + ").\n" +
       "Open " + appUrl + ", choose \"I'm a worker,\" pick your name (or enter your email), and sign in with this PIN: " + inviteWorker.pin;
 
     var result = await sendInviteEmail(inviteWorker.email, subject, text);
@@ -340,5 +340,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log("SwiftFlow backend running at http://localhost:" + PORT);
+  console.log("Onixora backend running at http://localhost:" + PORT);
 });

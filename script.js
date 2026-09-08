@@ -1,5 +1,5 @@
 /* ================================================
-   SwiftFlow — app logic (vanilla JS, no dependencies)
+   Onixora — app logic (vanilla JS, no dependencies)
    State starts empty — you build the roster and
    schedule yourself. Backend data (if server.js is
    running) is the source of truth; otherwise state
@@ -116,7 +116,8 @@
     hotel:      { label: "Hotel",            icon: "bed",       accent: "amber", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Front Desk", "Housekeeping", "Kitchen", "Security", "Concierge"] },
     restaurant: { label: "Restaurant",       icon: "utensils",  accent: "coral", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Host", "Kitchen", "Server", "Bar", "Dish"] },
     security:   { label: "Security Company", icon: "shield",    accent: "teal",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Gate", "Patrol", "CCTV Monitor", "Response Team"] },
-    volunteer:  { label: "Volunteer / NGO",  icon: "hand",      accent: "amber", mode: "grid",   days: ["Mon","Wed","Fri","Sat"], duties: ["Outreach", "Logistics", "Registration", "Distribution"] }
+    volunteer:  { label: "Volunteer / NGO",  icon: "hand",      accent: "amber", mode: "grid",   days: ["Mon","Wed","Fri","Sat"], duties: ["Outreach", "Logistics", "Registration", "Distribution"] },
+    other:      { label: "Other",            icon: "spark",     accent: "coral", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Team A", "Team B", "Team C"] }
   };
   var GATE_ICONS = {
     briefcase: '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
@@ -126,7 +127,8 @@
     bed: '<svg viewBox="0 0 24 24"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6"/><path d="M3 18v2M21 18v2"/><path d="M3 12V7a2 2 0 0 1 2-2h5v5"/></svg>',
     utensils: '<svg viewBox="0 0 24 24"><path d="M6 3v7a2 2 0 0 0 4 0V3M8 10v11"/><path d="M17 3c-1.7 0-3 2-3 5s1.3 5 3 5v8"/></svg>',
     shield: '<svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5z"/></svg>',
-    hand: '<svg viewBox="0 0 24 24"><path d="M8 12V5a1.5 1.5 0 0 1 3 0v6"/><path d="M11 11V4a1.5 1.5 0 0 1 3 0v7"/><path d="M14 11V6a1.5 1.5 0 0 1 3 0v8"/><path d="M6 13l1 6a2 2 0 0 0 2 2h5a4 4 0 0 0 4-4v-4a1.5 1.5 0 0 0-3 0"/></svg>'
+    hand: '<svg viewBox="0 0 24 24"><path d="M8 12V5a1.5 1.5 0 0 1 3 0v6"/><path d="M11 11V4a1.5 1.5 0 0 1 3 0v7"/><path d="M14 11V6a1.5 1.5 0 0 1 3 0v8"/><path d="M6 13l1 6a2 2 0 0 0 2 2h5a4 4 0 0 0 4-4v-4a1.5 1.5 0 0 0-3 0"/></svg>',
+    spark: '<svg viewBox="0 0 24 24"><path d="M12 3v5M12 16v5M3 12h5M16 12h5M6 6l3.5 3.5M14.5 14.5 18 18M18 6l-3.5 3.5M9.5 14.5 6 18"/></svg>'
   };
 
   var ALL_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -187,13 +189,18 @@
   // instead of five separate copy-pasted HTML blocks.
   function addGateBranding() {
     $all(".gate-inner").forEach(function (inner) {
-      var brand = el("div", "gate-brand", "<svg class='gate-brand-icon' viewBox='0 0 24 24'><path d='M13 2 4.5 14H11L10 22 19.5 9H13L13 2Z'/></svg><span>SwiftFlow</span>");
+      if (inner.querySelector(".gate-brand")) return; // already has one — don't double up
+      var brand = el("div", "gate-brand", "<svg class='gate-brand-icon' viewBox='0 0 24 24'><defs><linearGradient id='onixGrad' x1='2' y1='2' x2='22' y2='22' gradientUnits='userSpaceOnUse'><stop offset='0%' stop-color='#4361EE'/><stop offset='55%' stop-color='#8B5CF6'/><stop offset='100%' stop-color='#14B8A6'/></linearGradient></defs><circle cx='12' cy='12' r='8.3' fill='none' stroke='url(#onixGrad)' stroke-width='3'/><circle cx='12' cy='4' r='2.6' fill='url(#onixGrad)'/><circle cx='5' cy='16.5' r='2.2' fill='url(#onixGrad)'/><circle cx='19' cy='16.5' r='2.2' fill='url(#onixGrad)'/></svg><span>Onixora</span>");
       inner.insertBefore(brand, inner.firstChild);
     });
   }
   addGateBranding();
 
   function selectOrg(key) {
+    // Captured before anything below mutates state — this is the one
+    // reliable way to tell "brand-new organization" apart from "an
+    // existing admin switching org type", since both paths land here.
+    var isFirstTimeOrg = !!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) && !state.orgId;
     state.orgType = key;
     state.scheduleDays = [];
     state.jobTypes = [];
@@ -210,7 +217,12 @@
     }).catch(function () {});
     enterAdmin(); // whoever sets up the org type becomes the first admin session
     refreshOrgDependentUI();
-    showToast("Set up for " + ORG_TYPES[key].label + ". Change this anytime from the sidebar.");
+    if (isFirstTimeOrg && onboardingGate) {
+      onboardingGate.hidden = false;
+      updateToggleSurface();
+    } else {
+      showToast("Set up for " + ORG_TYPES[key].label + ". Change this anytime from the sidebar.");
+    }
   }
 
   function refreshOrgDependentUI() {
@@ -286,7 +298,7 @@
     });
     navBtns.forEach(function (b) { b.classList.toggle("is-active", b.dataset.view === name); });
     bottomNavBtns.forEach(function (b) { b.classList.toggle("is-active", b.dataset.view === name); });
-    topbarTitle.textContent = name === "schedule" ? $("#navScheduleLabel").textContent : (VIEW_TITLES[name] || "SwiftFlow");
+    topbarTitle.textContent = name === "schedule" ? $("#navScheduleLabel").textContent : (VIEW_TITLES[name] || "Onixora");
     closeSidebar();
   }
   navBtns.forEach(function (btn) {
@@ -439,10 +451,10 @@
   function inviteMessage(worker) {
     var url = window.location.origin + window.location.pathname;
     if (worker.token) {
-      return "You're on the SwiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
+      return "You're on the Onixora schedule as " + worker.name + " (" + worker.role + ").\n" +
         "Open your personal link to see your shifts and clock in: " + url + "?invite=" + worker.token;
     }
-    return "You're on the SwiftFlow schedule as " + worker.name + " (" + worker.role + ").\n" +
+    return "You're on the Onixora schedule as " + worker.name + " (" + worker.role + ").\n" +
       "Open " + url + ", choose \"I'm a worker,\" pick your name, and sign in with this PIN: " + worker.pin;
   }
 
@@ -479,13 +491,13 @@
         showToast("Invite emailed to " + worker.email + ".");
         return;
       }
-      var subject = "Your SwiftFlow sign-in";
+      var subject = "Your Onixora sign-in";
       var body = inviteMessage(worker);
       var mailto = "mailto:" + encodeURIComponent(worker.email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
       window.location.href = mailto;
       markInvited(worker);
     }).catch(function () {
-      var subject = "Your SwiftFlow sign-in";
+      var subject = "Your Onixora sign-in";
       var body = inviteMessage(worker);
       var mailto = "mailto:" + encodeURIComponent(worker.email) + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
       window.location.href = mailto;
@@ -1693,7 +1705,7 @@
   var chatWidgetSendBtn = $("#chatWidgetSendBtn");
 
   var widgetMessages = [
-    { text: "Hi — I'm your SwiftFlow assistant. I can answer questions, and I can also do things for you. Try \"help\" to see what I can run.", me: false, time: timeNow() }
+    { text: "Hi — I'm your Onixora assistant. I can answer questions, and I can also do things for you. Try \"help\" to see what I can run.", me: false, time: timeNow() }
   ];
   var unreadCount = 0;
 
@@ -2103,7 +2115,7 @@
     if (/what can (this app|swiftflow|you) do|what (is|does) (this|swiftflow)/.test(lower)) {
       return accessMode === "worker"
         ? "This is where you check your shifts, clock in and out, request coverage swaps, and keep up with team chat and announcements. Ask me to do any of that, or type \"help\" for exact phrasings."
-        : "SwiftFlow runs your schedule end to end: add workers, build the schedule (by hand or with auto-assign), handle shift swaps, track attendance, and keep everyone in the loop with chat and announcements. Type \"help\" for commands I can run directly.";
+        : "Onixora runs your schedule end to end: add workers, build the schedule (by hand or with auto-assign), handle shift swaps, track attendance, and keep everyone in the loop with chat and announcements. Type \"help\" for commands I can run directly.";
     }
     return null; // nothing informational matched — let the caller decide what to do next
   }
@@ -2156,6 +2168,7 @@
     if (adminAuthGate) adminAuthGate.hidden = true;
     if (joinGate) joinGate.hidden = true;
     if (codeEntryGate) codeEntryGate.hidden = true;
+    if (onboardingGate) onboardingGate.hidden = true;
     appEl.hidden = true;
     workerShell.hidden = true;
     updateToggleSurface();
@@ -2168,6 +2181,7 @@
     if (adminAuthGate) adminAuthGate.hidden = true;
     if (joinGate) joinGate.hidden = true;
     if (codeEntryGate) codeEntryGate.hidden = true;
+    if (onboardingGate) onboardingGate.hidden = true;
     appEl.hidden = false;
     workerShell.hidden = true;
     var multiTenantActive = !!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured());
@@ -2178,6 +2192,15 @@
     if (switchRoleBtn) switchRoleBtn.hidden = multiTenantActive;
     updateJoinLinkButton();
     updateToggleSurface();
+    if (multiTenantActive) {
+      window.ShiftFlowAuth.getAdminIdentity().then(function (identity) {
+        var displayName = (identity && identity.name) || (identity && identity.email) || "Team Admin";
+        var badge = initials(displayName);
+        if ($("#sidebarUserName")) $("#sidebarUserName").textContent = displayName;
+        if ($("#sidebarUserAvatar")) $("#sidebarUserAvatar").textContent = badge;
+        if ($("#topbarUserAvatar")) $("#topbarUserAvatar").textContent = badge;
+      });
+    }
   }
 
   var copyJoinLinkBtn = $("#copyJoinLinkBtn");
@@ -2248,6 +2271,8 @@
     if (forgotBtn) forgotBtn.hidden = isSignup || isReset;
     var emailLabel = $("#adminAuthEmail").closest("label");
     if (emailLabel) emailLabel.hidden = isReset;
+    var nameField = $("#adminAuthNameField");
+    if (nameField) nameField.hidden = !isSignup;
     $("#adminAuthPassword").placeholder = isReset ? "New password, at least 6 characters" : "At least 6 characters";
     $("#adminAuthMsg").textContent = "";
   }
@@ -2305,11 +2330,15 @@
       return;
     }
     var email = $("#adminAuthEmail").value.trim();
+    var fullName = $("#adminAuthName") ? $("#adminAuthName").value.trim() : "";
     if (!email || !password) { msg.textContent = "Enter an email and password."; return; }
+    if (adminAuthMode === "signup" && !fullName) { msg.textContent = "Enter your name first."; return; }
     if (password.length < 6) { msg.textContent = "Password needs to be at least 6 characters."; return; }
     msg.textContent = "Working on it…";
-    var action = adminAuthMode === "signup" ? window.ShiftFlowAuth.signUp : window.ShiftFlowAuth.signInWithPassword;
-    action(email, password).then(function (result) {
+    var action = adminAuthMode === "signup"
+      ? function () { return window.ShiftFlowAuth.signUp(email, password, fullName); }
+      : function () { return window.ShiftFlowAuth.signInWithPassword(email, password); };
+    action().then(function (result) {
       if (result.error) {
         // The single most stressful moment in this whole flow: signed up,
         // never saw the email (or it's sitting in spam), now sign-in just
@@ -2349,7 +2378,7 @@
       }
       var wasSignup = adminAuthMode === "signup";
       checkAdminOrgAndEnter();
-      showToast(wasSignup ? "Account created — welcome to SwiftFlow." : "Signed in.");
+      showToast(wasSignup ? "Account created — welcome to Onixora." : "Signed in.");
     });
   }
 
@@ -2522,10 +2551,10 @@
     showToast(message);
     if (window.Notification) {
       if (Notification.permission === "granted") {
-        new Notification("SwiftFlow", { body: message });
+        new Notification("Onixora", { body: message });
       } else if (Notification.permission === "default") {
         Notification.requestPermission().then(function (perm) {
-          if (perm === "granted") new Notification("SwiftFlow", { body: message });
+          if (perm === "granted") new Notification("Onixora", { body: message });
         });
       }
     }
@@ -2544,6 +2573,7 @@
     if (adminAuthGate) adminAuthGate.hidden = true;
     if (joinGate) joinGate.hidden = true;
     if (codeEntryGate) codeEntryGate.hidden = true;
+    if (onboardingGate) onboardingGate.hidden = true;
     workerLoginGate.hidden = true;
     appEl.hidden = true;
     workerShell.hidden = false;
@@ -2554,7 +2584,27 @@
     renderWorkerSwapList();
     renderChatThread();
     renderWorkerAnnouncements();
+    renderWorkerProfile(worker);
     checkShiftReminder();
+  }
+
+  function renderWorkerProfile(worker) {
+    if ($("#profileAvatar")) $("#profileAvatar").textContent = initials(worker.name);
+    if ($("#profileName")) $("#profileName").textContent = worker.name;
+    if ($("#profileRole")) $("#profileRole").textContent = worker.role;
+    if ($("#profileEmail")) $("#profileEmail").textContent = worker.email || "Not set";
+    if ($("#profileOrgName")) $("#profileOrgName").textContent = state.orgName || orgConfig().label;
+  }
+
+  var onboardingGate = $("#onboardingGate");
+  var onboardingContinueBtn = $("#onboardingContinueBtn");
+  if (onboardingContinueBtn) {
+    onboardingContinueBtn.addEventListener("click", function () {
+      onboardingGate.hidden = true;
+      updateToggleSurface();
+      showView("team");
+      openWorkerForm();
+    });
   }
 
   var codeEntryGate = $("#codeEntryGate");
