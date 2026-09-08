@@ -1931,7 +1931,13 @@
       return "Swap #" + candidates[0].id + " (" + escapeHtml(candidates[0].from) + ") " + statusToSet + ".";
     }
 
-    if (/auto.?assign|fill open shifts|fill the schedule/.test(lower)) {
+    // The word alone isn't enough — this actually changes the schedule,
+    // so a question about it ("how does auto-assign work") shouldn't run
+    // it just because it shares the keyword. The early question-intercept
+    // in assistantHandle catches most phrasings of that before this ever
+    // runs; this excludes the rest as a second line of defense specifically
+    // here, since this command (unlike most) has a real side effect.
+    if (/auto.?assign|fill open shifts|fill the schedule/.test(lower) && !/\b(how|what|why|explain|does)\b/.test(lower)) {
       if (team.length === 0) return "Add workers first — auto-assign matches them by role.";
       var cfgA = orgConfig();
       var resultA = cfgA.mode === "church" ? autoAssignChurch(cfgA) : autoAssignGrid(cfgA);
@@ -2018,6 +2024,19 @@
       return "Running smoothly on my end — how can I help?";
     }
 
+    // A clearly-phrased question ("how does X work", "what can you do")
+    // gets answered as a question even when it happens to contain a word
+    // a command trigger also matches — "how does auto-assign work" was
+    // running auto-assign instead of explaining it, because the command
+    // check below only looks for the word, not whether this is even a
+    // request to run anything. Informational answers get first look
+    // whenever the phrasing itself signals "I'm asking", before commands
+    // get a chance to misfire on a keyword they happen to share.
+    if (/^(how|what|why|when|does|is|are|can|explain)\b/.test(lower)) {
+      var earlyAnswer = tryInformationalAnswer(lower);
+      if (earlyAnswer) return earlyAnswer;
+    }
+
     // Try to execute a real action first, scoped to who's logged in.
     var actionResult = null;
     if (accessMode === "admin") actionResult = tryAdminCommand(raw, lower);
@@ -2027,6 +2046,18 @@
     // Fall back to informational, read-only answers — actually answering
     // from live app state where there's state to answer from, rather than
     // treating anything that isn't a recognized command as a dead end.
+    var infoAnswer = tryInformationalAnswer(lower);
+    if (infoAnswer) return infoAnswer;
+
+    // A generic "I didn't understand" is a dead end — give the closest
+    // couple of things it does understand instead, so the miss is still
+    // useful.
+    return accessMode === "worker"
+      ? "I didn't catch that. Try \"clock me in\", \"my shifts\", \"request a swap\", or ask me something like \"what can this app do\" — or type \"help\" for everything."
+      : "I didn't catch that. Try \"add worker Sam as Usher\", \"who's on shift\", \"auto-assign open shifts\", or ask me something like \"how does auto-assign work\" — or type \"help\" for everything.";
+  }
+
+  function tryInformationalAnswer(lower) {
     var cfgQ = orgConfig();
 
     if (/what (kind of |type of )?org|what mode|how (does|is) (the )?schedul(e|ing) work|structure/.test(lower)) {
@@ -2037,7 +2068,7 @@
     if (/job types?|what (roles|duties)/.test(lower) && accessMode === "admin") {
       return "Your current job types: " + cfgQ.duties.map(function (d) { return escapeHtml(d); }).join(", ") + ". Add more with \"add job type X\", or from Schedule setup on the Schedule tab.";
     }
-    if (/how (do i|to) auto.?assign|what does auto.?assign do/.test(lower)) {
+    if (/how (do i|to|does) auto.?assign|what does auto.?assign do/.test(lower)) {
       return "It fills every open slot by matching each worker's role to the duty needed, rotating fairly so no one gets stacked while someone else gets none. If nobody has an exact role match for a slot, it repeats whoever's least-loaded rather than leave it empty, and tells you when it did. It never overwrites anything you've already set by hand.";
     }
     if (/how (do i|to) add (a )?worker|invite (a )?worker/.test(lower) && accessMode === "admin") {
@@ -2074,13 +2105,7 @@
         ? "This is where you check your shifts, clock in and out, request coverage swaps, and keep up with team chat and announcements. Ask me to do any of that, or type \"help\" for exact phrasings."
         : "SwiftFlow runs your schedule end to end: add workers, build the schedule (by hand or with auto-assign), handle shift swaps, track attendance, and keep everyone in the loop with chat and announcements. Type \"help\" for commands I can run directly.";
     }
-
-    // A generic "I didn't understand" is a dead end — give the closest
-    // couple of things it does understand instead, so the miss is still
-    // useful.
-    return accessMode === "worker"
-      ? "I didn't catch that. Try \"clock me in\", \"my shifts\", \"request a swap\", or ask me something like \"what can this app do\" — or type \"help\" for everything."
-      : "I didn't catch that. Try \"add worker Sam as Usher\", \"who's on shift\", \"auto-assign open shifts\", or ask me something like \"how does auto-assign work\" — or type \"help\" for everything.";
+    return null; // nothing informational matched — let the caller decide what to do next
   }
 
   function sendWidgetMessage() {

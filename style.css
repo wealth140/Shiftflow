@@ -676,7 +676,10 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
 .chat-widget-backdrop{
   position: fixed; inset: 0;
   background: rgba(15,23,41,0.5);
-  z-index: 89;
+  /* Above .theme-toggle's z-index:300 — otherwise the toggle floats on
+     top of the (now full-section) widget and its close button ends up
+     sitting right underneath it, unreachable. */
+  z-index: 305;
   opacity: 0; visibility: hidden;
   transition: opacity 0.2s ease, visibility 0.2s;
 }
@@ -694,7 +697,7 @@ td.empty-state::before{ display: inline-block; vertical-align: middle; margin: 0
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  z-index: 90;
+  z-index: 306;
   opacity: 0;
   visibility: hidden;
   transform: scale(0.97);
