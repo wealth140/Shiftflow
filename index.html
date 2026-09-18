@@ -44,30 +44,30 @@
 </head>
 <body>
 
-<!-- ============ ORG TYPE GATE (admin sets this up once) ============ -->
+<!-- ============ CHURCH GATE (church setup happens once) ============ -->
 <div class="gate" id="orgGate">
   <button class="gate-back-btn" id="orgGateBackBtn" aria-label="Back to dashboard" hidden>
     <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg> Back
   </button>
   <div class="gate-inner">
-    <p class="gate-eyebrow">Before we start</p>
-    <h1 class="gate-title">What are you scheduling for?</h1>
-    <p class="gate-sub">Onixora restructures itself around what you run — a church's Sunday service lineup looks nothing like a restaurant's weekly shift grid.</p>
+  <p class="gate-eyebrow">Church operations</p>
+  <h1 class="gate-title">Organize your church ministries</h1>
+  <p class="gate-sub">Coordinate Sunday services, ministry leaders, workers, attendance and announcements from one shared church workspace.</p>
     <div class="gate-grid" id="gateGrid"></div>
   </div>
 </div>
 
-<!-- ============ ROLE GATE (returning visitors: admin or worker?) ============ -->
+<!-- ============ ROLE GATE (church staff or worker) ============ -->
 <div class="gate" id="roleGate" hidden>
   <div class="gate-inner">
-    <p class="gate-eyebrow">Welcome</p>
-    <h1 class="gate-title">Manage your people, schedules and daily operations in one place</h1>
-    <p class="gate-sub">Onixora adapts to how your organization runs — a church's Sunday service lineup looks nothing like a restaurant's weekly shift grid.</p>
+    <p class="gate-eyebrow">Welcome to your church workspace</p>
+    <h1 class="gate-title">Lead the church. Coordinate the details.</h1>
+    <p class="gate-sub">Pastors oversee the church, Coordinators run operations, Ministry Leaders manage their departments, and Workers see what they need.</p>
     <div class="gate-grid role-gate-grid">
       <button class="gate-card" id="roleAdminBtn">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-        <span class="gate-card-label">Create an organization</span>
-        <span class="gate-card-sub">Full schedule &amp; team control</span>
+        <span class="gate-card-label">Church staff</span>
+        <span class="gate-card-sub">Pastor, Coordinator, or Ministry Leader</span>
       </button>
       <button class="gate-card" id="roleWorkerBtn">
         <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4 3-6.5 7-6.5s7 2.5 7 6.5"/></svg>
@@ -105,9 +105,9 @@
      gate above goes straight into the dashboard, same as always. -->
 <div class="gate" id="adminAuthGate" hidden>
   <div class="gate-inner">
-    <p class="gate-eyebrow">Admin sign-in</p>
+    <p class="gate-eyebrow">Church staff sign-in</p>
     <h1 class="gate-title" id="adminAuthTitle">Sign in</h1>
-    <p class="gate-sub" id="adminAuthSub">Use your admin account to manage this organization's schedule.</p>
+    <p class="gate-sub" id="adminAuthSub">Use your church account to access the role and ministry permissions assigned to you.</p>
     <div class="worker-login-form" id="adminAuthForm">
       <label id="adminAuthNameField" hidden>Your name
         <input type="text" id="adminAuthName" placeholder="e.g. Sam Whitfield" autocomplete="name">
@@ -256,11 +256,11 @@
       <div class="sidebar-user">
         <span class="avatar" id="sidebarUserAvatar">TA</span>
         <div>
-          <p class="sidebar-user-name" id="sidebarUserName">Team Admin</p>
+          <p class="sidebar-user-name" id="sidebarUserName">Church staff</p>
           <p class="sidebar-user-role" id="sidebarOrgLabel">Set up your organization</p>
         </div>
       </div>
-      <button class="sidebar-switch" id="switchOrgBtn">Switch organization type</button>
+      <button class="sidebar-switch" id="switchOrgBtn" hidden>Switch organization type</button>
       <button class="sidebar-switch" id="switchRoleBtn">Switch to worker view</button>
       <button class="sidebar-switch" id="adminSignOutBtn" hidden>Sign out</button>
     </div>
@@ -481,6 +481,32 @@
           </div>
         </div>
 
+        <div class="panel church-leadership-panel" id="churchLeadershipPanel" hidden>
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow-label">Coordinator controls</p>
+              <h2>Ministries and leaders</h2>
+            </div>
+          </div>
+          <p class="field-hint">Create departments and assign a Ministry Leader. Leaders then manage workers inside their own ministry.</p>
+          <div class="leadership-actions">
+            <div class="tag-add-row">
+              <input type="text" id="ministryNameInput" placeholder="e.g. Media Department">
+              <button type="button" class="btn btn-primary btn-sm" id="createMinistryBtn">Create ministry</button>
+            </div>
+            <div class="worker-form-row">
+              <label>Ministry
+                <select id="leaderMinistrySelect"></select>
+              </label>
+              <label>Leader account ID
+                <input type="text" id="leaderUserIdInput" placeholder="Supabase user ID">
+              </label>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" id="assignLeaderBtn">Assign Ministry Leader</button>
+            <p class="field-hint" id="leadershipMsg" role="status"></p>
+          </div>
+        </div>
+
         <div class="worker-form-wrap" id="workerFormWrap" hidden>
           <form class="worker-form" id="workerForm">
             <div class="worker-form-row">
@@ -490,6 +516,10 @@
               <label>Role
                 <select id="workerRole" required></select>
                 <span class="field-hint">Used to auto-assign this worker to open shifts.</span>
+              </label>
+              <label>Ministry
+                <select id="workerMinistry" required></select>
+                <span class="field-hint">Every worker belongs to one ministry.</span>
               </label>
             </div>
             <div class="worker-form-row">

@@ -139,7 +139,10 @@ async function handleApi(req, res, pathname) {
 
   if (resource === "org" && req.method === "POST") {
     var orgBody = await readBody(req);
-    data.orgType = orgBody.orgType;
+    if (orgBody.orgType && orgBody.orgType !== "church") {
+      return sendJson(res, 400, { error: "Onixora supports churches only." });
+    }
+    data.orgType = "church";
     // A new org type means a different set of days/services and job types
     // are meaningful — any custom schedule setup from before belongs to
     // the old org type, so start that part fresh too.

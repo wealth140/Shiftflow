@@ -104,20 +104,10 @@
      because a church's week revolves around Sunday services rather
      than a uniform daily shift grid.
   --------------------------------------------- */
-  // "accent" picks a card's icon-box tint on the org-type gate — cycling
-  // through the app's own three brand colors rather than a different
-  // saturated hue per card, so eight cards read as one cohesive palette
-  // instead of a rainbow.
+  // Onixora is intentionally church-only. The church configuration remains
+  // data-driven so services and ministry duties can still be customized.
   var ORG_TYPES = {
-    business:   { label: "Business",        icon: "briefcase", accent: "teal",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Front Desk", "Kitchen", "Floor", "Security", "Warehouse"] },
     church:     { label: "Church",           icon: "church",    accent: "amber", mode: "church", services: ["First Service", "Second Service", "Youth Service", "Midweek Service"], duties: ["Usher", "Greeter", "Choir", "Media & Sound", "Parking Team", "Children's Ministry", "Security"] },
-    hospital:   { label: "Hospital",         icon: "pulse",     accent: "coral", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Nursing", "Reception", "Security", "Housekeeping", "Lab"] },
-    school:     { label: "School",           icon: "book",      accent: "teal",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri"], duties: ["Front Office", "Cafeteria", "Security", "Custodial", "Bus Duty"] },
-    hotel:      { label: "Hotel",            icon: "bed",       accent: "amber", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Front Desk", "Housekeeping", "Kitchen", "Security", "Concierge"] },
-    restaurant: { label: "Restaurant",       icon: "utensils",  accent: "coral", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Host", "Kitchen", "Server", "Bar", "Dish"] },
-    security:   { label: "Security Company", icon: "shield",    accent: "teal",  mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Gate", "Patrol", "CCTV Monitor", "Response Team"] },
-    volunteer:  { label: "Volunteer / NGO",  icon: "hand",      accent: "amber", mode: "grid",   days: ["Mon","Wed","Fri","Sat"], duties: ["Outreach", "Logistics", "Registration", "Distribution"] },
-    other:      { label: "Other",            icon: "spark",     accent: "coral", mode: "grid",   days: ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], duties: ["Team A", "Team B", "Team C"] }
   };
   var GATE_ICONS = {
     briefcase: '<svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
@@ -132,7 +122,7 @@
   };
 
   var ALL_WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  var state = { orgType: null, scheduleDays: [], jobTypes: [], orgId: null };
+  var state = { orgType: null, scheduleDays: [], jobTypes: [], orgId: null, currentRole: null, currentMinistryId: null, ministries: [] };
 
   // The admin can customize which days/services are on the schedule and
   // what job types workers get assigned to (Schedule setup panel). When
@@ -140,7 +130,7 @@
   // other function in the app reads days/duties/services through this one
   // function, so customizing it here is enough to flow everywhere.
   function orgConfig() {
-    var base = ORG_TYPES[state.orgType] || ORG_TYPES.business;
+    var base = ORG_TYPES.church;
     if ((!state.scheduleDays || !state.scheduleDays.length) && (!state.jobTypes || !state.jobTypes.length)) return base;
     var cfg = Object.assign({}, base);
     if (state.scheduleDays && state.scheduleDays.length) {
@@ -201,6 +191,7 @@
     // reliable way to tell "brand-new organization" apart from "an
     // existing admin switching org type", since both paths land here.
     var isFirstTimeOrg = !!(window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) && !state.orgId;
+    key = "church";
     state.orgType = key;
     state.scheduleDays = [];
     state.jobTypes = [];
@@ -229,7 +220,7 @@
     var cfg = orgConfig();
     $("#navScheduleLabel").textContent = cfg.mode === "church" ? "Sunday Services" : "Schedule";
     if ($("#bottomNavScheduleLabel")) $("#bottomNavScheduleLabel").textContent = cfg.mode === "church" ? "Services" : "Schedule";
-    $("#sidebarOrgLabel").textContent = cfg.label;
+    $("#sidebarOrgLabel").textContent = state.currentRole ? state.currentRole.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); }) : cfg.label;
     $("#scheduleLede").textContent = team.length === 0
       ? "Add workers on the Team tab to start building your schedule."
       : (cfg.mode === "church"
@@ -241,7 +232,10 @@
     renderSchedule();
     renderTodayShifts();
     populateRoleSelect();
+    populateMinistrySelects();
     renderScheduleSetup();
+    updateLeadershipPanel();
+    updateRoleControls();
   }
 
   buildGate();
@@ -516,7 +510,7 @@
 
   function addWorker(data) {
     var localId = nextWorkerId++;
-    var worker = { id: localId, name: data.name, role: data.role, on: data.status === "on", email: data.email || "", pin: generatePin(), invitedAt: null };
+    var worker = { id: localId, name: data.name, role: data.role, ministryId: data.ministryId || "general", on: data.status === "on", email: data.email || "", pin: generatePin(), invitedAt: null };
     team.unshift(worker);
     renderTeam();
     renderSchedule();
@@ -536,7 +530,7 @@
     // it would silently write to a worker record that doesn't exist on the
     // server, and the real worker would never see it. So once the server
     // confirms, swap our local id for the real one everywhere it's used.
-    ShiftFlowAPI.addWorker({ name: worker.name, role: worker.role, status: data.status, email: worker.email, pin: worker.pin }).then(function (serverWorker) {
+    ShiftFlowAPI.addWorker({ name: worker.name, role: worker.role, ministryId: worker.ministryId, status: data.status, email: worker.email, pin: worker.pin }).then(function (serverWorker) {
       if (!serverWorker) return;
       // The real backend (api/[...path].js) generates its own invite-link
       // token server-side — the client never had it, so it always needs
@@ -599,6 +593,77 @@
       select.appendChild(opt);
     });
   }
+
+  function populateMinistrySelects() {
+    var workerSelect = $("#workerMinistry");
+    var leaderSelect = $("#leaderMinistrySelect");
+    var ministries = state.ministries.length ? state.ministries : [{ id: "general", name: "General Ministry" }];
+    [workerSelect, leaderSelect].forEach(function (select) {
+      if (!select) return;
+      var previous = select.value;
+      select.innerHTML = "";
+      ministries.forEach(function (ministry) {
+        var option = document.createElement("option");
+        option.value = ministry.id;
+        option.textContent = ministry.name;
+        select.appendChild(option);
+      });
+      if (previous && ministries.some(function (ministry) { return String(ministry.id) === String(previous); })) select.value = previous;
+    });
+  }
+
+  function updateLeadershipPanel() {
+    var panel = $("#churchLeadershipPanel");
+    if (!panel) return;
+    panel.hidden = !(state.currentRole === "pastor" || state.currentRole === "coordinator");
+    populateMinistrySelects();
+  }
+
+  function updateRoleControls() {
+    var isPastor = state.currentRole === "pastor";
+    var isLeader = state.currentRole === "ministry_leader";
+    var canOperate = state.currentRole === "coordinator" || isLeader || !state.currentRole;
+    var addWorker = $("#addWorkerBtn");
+    var scheduleSetup = $("#scheduleSetupBtn");
+    var autoAssign = $("#autoAssignBtn");
+    if (addWorker) addWorker.hidden = isPastor;
+    if (scheduleSetup) scheduleSetup.hidden = isPastor;
+    if (autoAssign && isPastor) autoAssign.hidden = true;
+    if (isLeader) $("#scheduleLede").textContent = "Manage your ministry's Sunday rotation and assignments.";
+    if (isPastor) $("#scheduleLede").textContent = "Review the church-wide Sunday schedule and ministry coverage.";
+    return canOperate;
+  }
+
+  function createMinistry() {
+    var input = $("#ministryNameInput");
+    var name = input && input.value.trim();
+    if (!name) return;
+    ShiftFlowAPI.createMinistry(name).then(function (result) {
+      if (!result || !result.id) { showToast("Only a Pastor or Coordinator can create ministries.", true); return; }
+      state.ministries.push(result);
+      input.value = "";
+      populateMinistrySelects();
+      showToast(result.name + " created.");
+    });
+  }
+
+  function assignMinistryLeader() {
+    var ministry = $("#leaderMinistrySelect");
+    var user = $("#leaderUserIdInput");
+    if (!ministry || !user || !ministry.value || !user.value.trim()) return;
+    ShiftFlowAPI.assignMinistryLeader(ministry.value, user.value.trim()).then(function (result) {
+      var msg = $("#leadershipMsg");
+      if (!result || !result.user_id) {
+        if (msg) msg.textContent = "Leader assignment failed. Check the account ID and your Coordinator permission.";
+        return;
+      }
+      if (msg) msg.textContent = "Leader assigned. They can now manage workers in this ministry.";
+      user.value = "";
+    });
+  }
+
+  if ($("#createMinistryBtn")) $("#createMinistryBtn").addEventListener("click", createMinistry);
+  if ($("#assignLeaderBtn")) $("#assignLeaderBtn").addEventListener("click", assignMinistryLeader);
 
   /* ---------------------------------------------
      4b. Schedule setup — admin picks which days/services are on the
@@ -761,13 +826,14 @@
     var nameField = $("#workerName");
     var name = nameField.value.trim();
     var role = $("#workerRole").value.trim();
+    var ministryId = $("#workerMinistry") ? $("#workerMinistry").value : "general";
     var status = $("#workerStatus").value;
     var emailField = $("#workerEmail");
     var email = emailField.value.trim();
     if (!name) { showToast("Enter a name first.", true); nameField.focus(); return; }
     if (!role) { showToast("Pick a role first.", true); return; }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showToast("That email doesn't look right.", true); emailField.focus(); return; }
-    addWorker({ name: name, role: role, status: status, email: email });
+    addWorker({ name: name, role: role, ministryId: ministryId, status: status, email: email });
     closeWorkerForm();
   }
   if (workerSubmitBtn) workerSubmitBtn.addEventListener("click", submitWorkerForm);
@@ -2881,6 +2947,9 @@
     if (Array.isArray(data.jobTypes)) state.jobTypes = data.jobTypes;
     if (data.orgId) state.orgId = data.orgId;
     if (data.joinCode) state.joinCode = data.joinCode;
+    if (data.currentRole) state.currentRole = data.currentRole;
+    if (data.currentMinistryId) state.currentMinistryId = data.currentMinistryId;
+    if (Array.isArray(data.ministries)) state.ministries = data.ministries;
     state.orgName = data.orgName || null;
   }
 

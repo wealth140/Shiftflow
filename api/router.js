@@ -1,15 +1,14 @@
 /* ================================================
    Onixora — production API (Vercel + Supabase), multi-tenant
 
-   Every admin gets their own organization (their own team, schedule,
-   swaps, attendance, chat, announcements) — completely separate from
-   every other admin's. One admin account = one organization.
+  Every church gets its own organization (team, ministries, schedule,
+  swaps, attendance, chat, announcements). Supabase memberships determine
+  whether a caller is a Pastor, Coordinator, or Ministry Leader.
 
    Two ways in:
-     - Admin: signs in with Supabase Auth (see supabase-auth.js). Every
-       admin-only route below requires a valid Bearer token and resolves
-       to that admin's own organization — there is no "open" mode here,
-       unlike the single-tenant server.js used for local dev.
+     - Church staff: signs in with Supabase Auth (see supabase-auth.js).
+       Every staff route requires a valid Bearer token and a membership in
+       the requested church. Worker invite links remain limited to workers.
      - Worker: never has a Supabase account. Their invite link carries a
        random, unguessable token (?invite=...) that resolves straight to
        them — which organization, which worker — with no PIN and no
@@ -42,7 +41,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const EMAIL_FROM = process.env.EMAIL_FROM || "Onixora <onboarding@resend.dev>";
 
 var DEFAULT_ORG_DATA = {
-  orgType: null, orgName: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
+  orgType: "church", orgName: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
   attendance: [], chat: { general: [], schedule: [], announcements: [] }, announcements: [],
   scheduleDays: null, jobTypes: null
 };
@@ -115,9 +114,62 @@ async function getAdminUser(req) {
 // callers treat that as "this admin hasn't set up their org" rather than
 // an error.
 async function getOrgForAdmin(user) {
-  const { data, error } = await supabase.from("organizations").select("*").eq("owner_id", user.id).maybeSingle();
+  const { data: membership, error: membershipError } = await supabase
+    .from("organization_members")
+    .select("org_id, role, ministry_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  if (membershipError || !membership) return null;
+  const { data, error } = await supabase.from("organizations").select("*").eq("id", membership.org_id).maybeSingle();
   if (error) { console.error("Supabase read error:", error.message); return null; }
-  return data;
+  return data ? Object.assign(data, { membership: membership }) : null;
+}
+
+async function getMembership(userId, orgId) {
+  const { data, error } = await supabase.from("organization_members")
+    .select("org_id, user_id, role, ministry_id")
+    .eq("org_id", orgId).eq("user_id", userId).maybeSingle();
+  if (error) console.error("Supabase membership error:", error.message);
+  return data || null;
+}
+
+async function getMinistries(orgId) {
+  const { data, error } = await supabase.from("ministries")
+    .select("id, name").eq("org_id", orgId).order("name");
+  if (error) { console.error("Supabase ministries error:", error.message); return []; }
+  return data || [];
+}
+
+async function getWorkerMinistry(orgId, workerId) {
+  const { data } = await supabase.from("worker_ministry_memberships")
+    .select("ministry_id").eq("org_id", orgId).eq("worker_id", workerId).maybeSingle();
+  return data ? data.ministry_id : null;
+}
+
+async function scopeDataForMember(orgId, data, membership) {
+  if (!membership || membership.role !== "ministry_leader") return data;
+  const { data: memberships } = await supabase.from("worker_ministry_memberships")
+    .select("worker_id").eq("org_id", orgId).eq("ministry_id", membership.ministry_id);
+  var visibleIds = (memberships || []).map(function (item) { return String(item.worker_id); });
+  var scoped = Object.assign({}, data);
+  scoped.team = (data.team || []).filter(function (worker) { return visibleIds.indexOf(String(worker.id)) !== -1; });
+  scoped.duties = Object.keys(data.duties || {}).reduce(function (result, workerId) {
+    if (visibleIds.indexOf(String(workerId)) !== -1) result[workerId] = data.duties[workerId];
+    return result;
+  }, {});
+  scoped.churchAssignments = Object.keys(data.churchAssignments || {}).reduce(function (result, duty) {
+    result[duty] = Object.keys(data.churchAssignments[duty] || {}).reduce(function (services, service) {
+      var workerId = data.churchAssignments[duty][service];
+      if (visibleIds.indexOf(String(workerId)) !== -1) services[service] = workerId;
+      return services;
+    }, {});
+    return result;
+  }, {});
+  scoped.ministries = (await getMinistries(orgId)).filter(function (ministry) {
+    return String(ministry.id) === String(membership.ministry_id);
+  });
+  return scoped;
 }
 
 async function getOrgByInviteToken(token) {
@@ -188,8 +240,19 @@ module.exports = async function handler(req, res) {
         if (!resolved) return sendJson(404, { error: "That invite link isn't valid anymore — ask your admin to resend it." });
         var worker = (resolved.org.data.team || []).find((w) => w.id === resolved.workerId);
         if (!worker) return sendJson(404, { error: "That invite link isn't valid anymore — ask your admin to resend it." });
-        return sendJson(200, Object.assign({}, resolved.org.data, {
-          team: stripPins(resolved.org.data.team),
+        var workerMinistryId = await getWorkerMinistry(resolved.org.id, resolved.workerId);
+        var visibleTeam = (resolved.org.data.team || []).filter(function (member) {
+          return String(member.id) === String(resolved.workerId) || String(member.ministryId || "") === String(workerMinistryId || "");
+        });
+        var workerState = Object.assign({}, resolved.org.data, {
+          team: stripPins(visibleTeam),
+          duties: Object.keys(resolved.org.data.duties || {}).reduce(function (result, id) {
+            if (String(id) === String(resolved.workerId)) result[id] = resolved.org.data.duties[id];
+            return result;
+          }, {}),
+          ministries: await getMinistries(resolved.org.id)
+        });
+        return sendJson(200, Object.assign({}, workerState, {
           currentWorkerId: resolved.workerId
         }));
       }
@@ -197,7 +260,18 @@ module.exports = async function handler(req, res) {
       if (adminUser) {
         var org = await getOrgForAdmin(adminUser);
         if (!org) return sendJson(200, Object.assign({}, DEFAULT_ORG_DATA, { hasOrg: false }));
-        return sendJson(200, Object.assign({}, org.data, { hasOrg: true, orgId: org.id, joinCode: shortJoinCode(org.id, org.data.orgName) }));
+        var visibleData = await scopeDataForMember(org.id, org.data, org.membership);
+        return sendJson(200, Object.assign({}, org.data, {
+          hasOrg: true,
+          orgId: org.id,
+          joinCode: shortJoinCode(org.id, org.data.orgName),
+          currentRole: org.membership.role,
+          currentMinistryId: org.membership.ministry_id,
+          ministries: visibleData.ministries || await getMinistries(org.id),
+          team: visibleData.team,
+          duties: visibleData.duties,
+          churchAssignments: visibleData.churchAssignments
+        }));
       }
       return sendJson(401, { error: "Sign in, or use your invite link." });
     }
@@ -270,18 +344,22 @@ module.exports = async function handler(req, res) {
       var adminOrg = await getOrgForAdmin(asAdmin);
       if (resource === "org" && req.method === "POST") {
         var orgBody = await readBody(req);
+        if (orgBody.orgType && orgBody.orgType !== "church") return sendJson(400, { error: "Onixora supports churches only." });
         if (!adminOrg) {
           const { data: created, error: createErr } = await supabase.from("organizations")
-            .insert({ owner_id: asAdmin.id, data: Object.assign({}, DEFAULT_ORG_DATA, { orgType: orgBody.orgType }) })
+            .insert({ owner_id: asAdmin.id, data: Object.assign({}, DEFAULT_ORG_DATA, { orgType: "church" }) })
             .select().single();
           if (createErr) return sendJson(500, { error: createErr.message });
-          return sendJson(200, { orgType: created.data.orgType });
+          const { error: memberError } = await supabase.from("organization_members")
+            .insert({ org_id: created.id, user_id: asAdmin.id, role: "pastor" });
+          if (memberError) return sendJson(500, { error: memberError.message });
+          return sendJson(200, { orgType: "church", role: "pastor" });
         }
-        adminOrg.data.orgType = orgBody.orgType;
+        adminOrg.data.orgType = "church";
         adminOrg.data.scheduleDays = null;
         adminOrg.data.jobTypes = null;
         await saveOrg(adminOrg.id, adminOrg.data);
-        return sendJson(200, { orgType: adminOrg.data.orgType });
+        return sendJson(200, { orgType: "church", role: adminOrg.membership.role });
       }
       if (!adminOrg) return sendJson(400, { error: "Set up your organization first." });
       orgId = adminOrg.id;
@@ -297,12 +375,57 @@ module.exports = async function handler(req, res) {
       return sendJson(401, { error: "Sign in, or use your invite link." });
     }
 
-    // From here on, admin-only actions must actually come from the admin.
-    var ADMIN_ONLY = { schedule_config: true, workers_write: true, duties: true, church_assignments: true, announcements: true, swaps_resolve: true };
-    function requireAdmin() { return isAdminCaller; }
+    // Authorization is evaluated server-side for every write. The frontend
+    // may hide controls, but it is never the source of permission truth.
+    var membership = isAdminCaller ? await getMembership(asAdmin.id, orgId) : null;
+    var role = membership && membership.role;
+    var ministryId = membership && membership.ministry_id;
+    function hasRole(roles) { return isAdminCaller && roles.indexOf(role) !== -1; }
+    function requireRole(roles) { return hasRole(roles); }
+    function canManageMinistry(targetMinistryId) {
+      return hasRole(["pastor", "coordinator"]) || (role === "ministry_leader" && String(ministryId) === String(targetMinistryId));
+    }
+    function errorForRoles(roles) {
+      return sendJson(403, { error: "This action requires " + roles.join(" or ") + " permission." });
+    }
+
+    if (isAdminCaller && !membership) return sendJson(403, { error: "You are not assigned to a church role." });
+
+    if (resource === "ministries" && req.method === "GET") {
+      if (!isAdminCaller) return sendJson(403, { error: "Church staff access required." });
+      var visibleMinistries = await getMinistries(orgId);
+      if (role === "ministry_leader") visibleMinistries = visibleMinistries.filter(function (ministry) { return String(ministry.id) === String(ministryId); });
+      return sendJson(200, { ministries: visibleMinistries });
+    }
+
+    if (resource === "ministries" && parts.length === 2 && req.method === "POST") {
+      if (!requireRole(["pastor", "coordinator"])) return errorForRoles(["Pastor", "Coordinator"]);
+      var ministryBody = await readBody(req);
+      var ministryName = String(ministryBody.name || "").trim().slice(0, 80);
+      if (!ministryName) return sendJson(400, { error: "Ministry name is required." });
+      const { data: ministry, error: ministryError } = await supabase.from("ministries")
+        .insert({ org_id: orgId, name: ministryName }).select("id, name").single();
+      if (ministryError) return sendJson(400, { error: ministryError.message });
+      return sendJson(200, ministry);
+    }
+
+    if (resource === "ministries" && parts[3] === "leader" && req.method === "POST") {
+      if (!requireRole(["pastor", "coordinator"])) return errorForRoles(["Pastor", "Coordinator"]);
+      var leaderBody = await readBody(req);
+      var targetMinistryId = parts[2];
+      var leaderUserId = String(leaderBody.userId || "").trim();
+      if (!leaderUserId) return sendJson(400, { error: "A Supabase user id is required." });
+      const { data: targetMinistry } = await supabase.from("ministries").select("id").eq("id", targetMinistryId).eq("org_id", orgId).maybeSingle();
+      if (!targetMinistry) return sendJson(404, { error: "Ministry not found." });
+      const { data: leader, error: leaderError } = await supabase.from("organization_members")
+        .upsert({ org_id: orgId, user_id: leaderUserId, role: "ministry_leader", ministry_id: targetMinistryId }, { onConflict: "org_id,user_id" })
+        .select("org_id, user_id, role, ministry_id").single();
+      if (leaderError) return sendJson(400, { error: leaderError.message });
+      return sendJson(200, leader);
+    }
 
     if (resource === "schedule-config" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator"])) return errorForRoles(["Pastor", "Coordinator"]);
       var scBody = await readBody(req);
       if (Array.isArray(scBody.days)) data.scheduleDays = scBody.days.map((d) => String(d).slice(0, 40)).slice(0, 14);
       if (Array.isArray(scBody.duties)) data.jobTypes = scBody.duties.map((d) => String(d).slice(0, 60)).slice(0, 40);
@@ -314,7 +437,7 @@ module.exports = async function handler(req, res) {
     // setup whenever it runs (it's meant for switching org type), which a
     // simple rename shouldn't trigger.
     if (resource === "org-name" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator"])) return errorForRoles(["Pastor", "Coordinator"]);
       var nameBody = await readBody(req);
       data.orgName = String(nameBody.orgName || "").trim().slice(0, 80) || null;
       await saveOrg(orgId, data);
@@ -322,8 +445,13 @@ module.exports = async function handler(req, res) {
     }
 
     if (resource === "workers" && parts.length === 2 && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var wBody = await readBody(req);
+      var workerMinistryId = String(wBody.ministryId || (role === "ministry_leader" ? ministryId : "")).trim();
+      if (!workerMinistryId) return sendJson(400, { error: "Assign this worker to a ministry." });
+      if (!canManageMinistry(workerMinistryId)) return sendJson(403, { error: "You can only manage workers in your ministry." });
+      const { data: workerMinistry } = await supabase.from("ministries").select("id").eq("id", workerMinistryId).eq("org_id", orgId).maybeSingle();
+      if (!workerMinistry) return sendJson(404, { error: "Ministry not found." });
       var nextId = data.team.reduce((max, w) => Math.max(max, w.id), 0) + 1;
       var inviteTok = crypto.randomBytes(20).toString("hex");
       var newWorker = {
@@ -332,20 +460,23 @@ module.exports = async function handler(req, res) {
         role: String(wBody.role || "").slice(0, 60),
         on: wBody.status === "on",
         email: String(wBody.email || "").slice(0, 120),
+        ministryId: workerMinistryId,
         token: inviteTok,
         invitedAt: null
       };
       data.team.unshift(newWorker);
       await saveOrg(orgId, data);
       await supabase.from("worker_invite_tokens").insert({ token: inviteTok, org_id: orgId, worker_id: nextId });
+      await supabase.from("worker_ministry_memberships").upsert({ org_id: orgId, worker_id: nextId, ministry_id: workerMinistryId });
       return sendJson(200, newWorker);
     }
 
     if (resource === "workers" && parts[3] === "invite" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var inviteWorkerId = Number(parts[2]);
       var inviteWorker = data.team.find((w) => w.id === inviteWorkerId);
       if (!inviteWorker) return sendJson(404, { error: "not found" });
+      if (!canManageMinistry(await getWorkerMinistry(orgId, inviteWorkerId))) return sendJson(403, { error: "You can only manage workers in your ministry." });
       if (!inviteWorker.email) return sendJson(400, { sent: false, reason: "no-email-on-file" });
 
       var appUrl = req.headers.origin || ("https://" + req.headers.host);
@@ -363,39 +494,44 @@ module.exports = async function handler(req, res) {
     }
 
     if (resource === "workers" && parts[3] === "mark-invited" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var markWorkerId = Number(parts[2]);
       var markWorker = data.team.find((w) => w.id === markWorkerId);
       if (!markWorker) return sendJson(404, { error: "not found" });
+      if (!canManageMinistry(await getWorkerMinistry(orgId, markWorkerId))) return sendJson(403, { error: "You can only manage workers in your ministry." });
       markWorker.invitedAt = new Date().toISOString();
       await saveOrg(orgId, data);
       return sendJson(200, markWorker);
     }
 
     if (resource === "workers" && parts[3] === "status" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var statusBody = await readBody(req);
       var statusWorkerId = Number(parts[2]);
       var statusWorker = data.team.find((w) => w.id === statusWorkerId);
       if (!statusWorker) return sendJson(404, { error: "not found" });
+      if (!canManageMinistry(await getWorkerMinistry(orgId, statusWorkerId))) return sendJson(403, { error: "You can only manage workers in your ministry." });
       statusWorker.on = statusBody.status === "on";
       await saveOrg(orgId, data);
       return sendJson(200, statusWorker);
     }
 
     if (resource === "workers" && req.method === "DELETE") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var delId = Number(parts[2]);
+      if (!canManageMinistry(await getWorkerMinistry(orgId, delId))) return sendJson(403, { error: "You can only manage workers in your ministry." });
       data.team = data.team.filter((w) => w.id !== delId);
       delete data.duties[delId];
       await saveOrg(orgId, data);
       await supabase.from("worker_invite_tokens").delete().eq("org_id", orgId).eq("worker_id", delId);
+      await supabase.from("worker_ministry_memberships").delete().eq("org_id", orgId).eq("worker_id", delId);
       return sendJson(200, { removed: delId });
     }
 
     if (resource === "duties" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var dBody = await readBody(req);
+      if (!canManageMinistry(await getWorkerMinistry(orgId, dBody.workerId))) return sendJson(403, { error: "You can only assign duties within your ministry." });
       if (!data.duties[dBody.workerId]) data.duties[dBody.workerId] = {};
       data.duties[dBody.workerId][dBody.day] = dBody.duty;
       await saveOrg(orgId, data);
@@ -403,8 +539,9 @@ module.exports = async function handler(req, res) {
     }
 
     if (resource === "church-assignments" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var caBody = await readBody(req);
+      if (role === "ministry_leader" && !canManageMinistry(await getWorkerMinistry(orgId, caBody.workerId))) return sendJson(403, { error: "You can only schedule workers within your ministry." });
       if (!data.churchAssignments) data.churchAssignments = {};
       if (!data.churchAssignments[caBody.duty]) data.churchAssignments[caBody.duty] = {};
       data.churchAssignments[caBody.duty][caBody.service] = caBody.workerId;
@@ -413,7 +550,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (resource === "announcements" && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator"])) return errorForRoles(["Pastor", "Coordinator"]);
       var anBody = await readBody(req);
       if (!Array.isArray(data.announcements)) data.announcements = [];
       data.announcements.unshift(anBody);
@@ -439,7 +576,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (resource === "swaps" && parts.length === 3 && req.method === "POST") {
-      if (!requireAdmin()) return sendJson(403, { error: "Admins only." });
+      if (!requireRole(["pastor", "coordinator", "ministry_leader"])) return errorForRoles(["Pastor", "Coordinator", "Ministry Leader"]);
       var sBody = await readBody(req);
       var swapId = Number(parts[2]);
       var swap = data.swaps.find((s) => s.id === swapId);

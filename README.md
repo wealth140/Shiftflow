@@ -1,9 +1,13 @@
 # Onixora
 
-A shift-scheduling app for businesses, churches, hospitals, schools, hotels,
-restaurants, security companies and volunteer teams — with duty rotation,
-shift swaps, attendance, team chat, and a small backend that saves everything
-to disk.
+A church operations app with Sunday scheduling, ministry rotation, attendance,
+shift swaps, announcements and team chat. Onixora separates church-wide
+oversight from daily operations through four roles:
+
+- **Pastor** — church-wide oversight, reports, ministry status and announcements.
+- **Coordinator** — organization-wide operations, ministries, leaders, schedules and attendance.
+- **Ministry Leader** — workers, duties, rotation and communication inside one ministry.
+- **Worker** — personal schedule, availability, swaps and permitted ministry information.
 
 ## Running it for real (with the backend)
 
@@ -39,47 +43,45 @@ falls back silently if not.
 | `api/[...path].js` | Real deployment backend (Vercel + Supabase, multi-tenant) |
 | `data.json` | Where `server.js` persists everything, locally |
 
-## The organization-type picker
-(Business, Church, Hospital, School, Hotel, Restaurant, Security Company, or
-Volunteer/NGO). It doesn't just relabel things — the schedule's actual
-*structure* changes:
+## Church scheduling
+
+Onixora is church-only. The schedule uses a **Sunday Services** grid:
 
 - **Church** gets a **Sunday Services** grid: ministry duties (Usher, Greeter,
   Choir, Media & Sound, Parking Team, Children's Ministry, Security) as rows,
   services (First Service, Second Service, Youth Service, Midweek Service) as
   columns. Each cell assigns one team member to that duty for that service.
-- **Everyone else** gets a weekly grid: workers as rows, days as columns
-  (School is Mon–Fri only; everything else is a full week), with a duty
-  dropdown per day so the same person can be Front Desk on Monday and Kitchen
-  on Wednesday.
+Coordinators manage church-wide coverage; Ministry Leaders manage assignments
+within their ministry.
 
-You can change your organization type anytime from "Switch organization
-type" at the bottom of the sidebar.
+Run `supabase/001_church_roles.sql` after the base Supabase setup to create the
+role, ministry, membership and RLS model. Existing organization owners become
+Pastors. A Coordinator can create a ministry and assign a Supabase user as its
+Ministry Leader; that leader can then add and schedule workers in that ministry.
 
 ## Schedule setup — customize days/services and job types
 
-The lists above are just starting defaults. On the Schedule tab (Sunday
-Services for a church), the **"Schedule setup"** button opens a panel where
+The starting lists can be customized. On the Sunday Services tab, the
+**"Schedule setup"** button opens a panel where
 you can:
 
-- **Working days** (or **Services**, for a church) — toggle which days show
-  up as columns on the grid, or add/rename/remove services. At least one
+- **Services** — toggle which services show up as columns on the grid, or
+  add/rename/remove services. At least one
   must stay active.
 - **Job types** — add or remove the duties workers get assigned to. Whatever
   you set here immediately replaces the organization-type defaults
   everywhere: the schedule grid, the Add Worker role picker, auto-assign
   matching, and the assistant's role validation.
 
-"Reset to defaults" puts both lists back to your organization type's
-starting values. Switching organization type also resets both, since a
-different org type's days/duties usually don't carry over.
+"Reset to defaults" puts both lists back to the church's starting values.
 
 ## Adding workers
 
-The Team tab's "Add worker" form takes a name, a role, an optional email,
-and their current on/off-shift status. The **role you pick here is what
-drives auto-assign** (below) — pick whichever of your organization's duty
-options actually matches what this person does.
+The Coordinator can create ministries and assign Ministry Leaders. A Ministry
+Leader's Team tab is scoped to that ministry; its "Add worker" form takes a
+name, ministry duty, optional email, and current on/off-shift status. The
+Coordinator can manage every ministry, while a Pastor has oversight without
+being responsible for daily worker administration.
 
 ## Auto-assign
 
@@ -95,11 +97,12 @@ left open for you to sort out manually.
 ## How workers get into Onixora
 
 There's no separate app to install — workers use the same URL you do. Every
-visit now starts by asking **"How are you using Onixora?"**: Admin, or
+visit now starts by asking **"How are you using Onixora?"**: Church staff, or
 "I'm a worker."
 
-- **Admin** goes straight into the full dashboard (everything described
-  above).
+- **Church staff** receive the role assigned to their Supabase account:
+  Pastor, Coordinator, or Ministry Leader. Their API permissions and
+  Supabase RLS policies enforce the same scope even if they bypass the UI.
 - **Worker** picks their name from a list and enters a **4-digit PIN**.
   That PIN is generated automatically the moment you add them on the Team
   tab — it's shown right on their team card (with a "New PIN" link if it
