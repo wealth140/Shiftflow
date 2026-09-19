@@ -73,7 +73,7 @@ const STATIC_TYPES = {
 
 /* ---------- storage helpers ---------- */
 var DEFAULT_STATE = {
-  orgType: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
+  orgType: "church", orgName: null, team: [], duties: {}, churchAssignments: {}, swaps: [],
   attendance: [], chat: { general: [], schedule: [], announcements: [] }, announcements: [],
   scheduleDays: null, jobTypes: null
 };
@@ -150,6 +150,13 @@ async function handleApi(req, res, pathname) {
     data.jobTypes = null;
     writeData(data);
     return sendJson(res, 200, { orgType: data.orgType });
+  }
+
+  if (resource === "org-name" && req.method === "POST") {
+    var orgNameBody = await readBody(req);
+    data.orgName = String(orgNameBody.orgName || "").trim().slice(0, 80) || null;
+    writeData(data);
+    return sendJson(res, 200, { orgName: data.orgName });
   }
 
   if (resource === "schedule-config" && req.method === "POST") {

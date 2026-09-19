@@ -1822,10 +1822,10 @@
     "• \"assign Sam to Kitchen on Monday\" (or \"...for First Service\")<br>" +
     "• \"mark Sam on shift\" / \"mark Sam off shift\"<br>" +
     "• \"add job type Delivery Driver\" / \"remove job type Bar\"<br>" +
-    "• \"working days: Mon, Tue, Wed\"<br>" +
+    "• \"services: First Service, Youth Service\"<br>" +
     "• \"join link\" / \"join code\" (multi-tenant: get your team's self-serve join link or code)<br>" +
     "• \"set our organization name to Mario's Pizza\"<br>" +
-    "• \"switch organization to Restaurant\"<br>" +
+    "• \"church schedule\"<br>" +
     "• \"approve swap 3\" or \"approve Sam's swap\"<br>" +
     "• \"decline swap 3\"<br>" +
     "• \"auto-assign open shifts\"<br>" +
@@ -2143,7 +2143,7 @@
     if (/what (kind of |type of )?org|what mode|how (does|is) (the )?schedul(e|ing) work|structure/.test(lower)) {
       return cfgQ.mode === "church"
         ? "You're set up as a Church: ministry duties (" + cfgQ.duties.slice(0, 3).join(", ") + (cfgQ.duties.length > 3 ? "…" : "") + ") as rows, services (" + cfgQ.services.join(", ") + ") as columns. Change it anytime from \"Switch organization type\" in the sidebar."
-        : "You're set up as " + escapeHtml(orgConfig().label || "a business") + ": each worker gets a duty per day (" + cfgQ.days.join(", ") + "). Change it anytime from \"Switch organization type\" in the sidebar.";
+        : "Your church schedule is ready for ministry duties and Sunday services.";
     }
     if (/job types?|what (roles|duties)/.test(lower) && accessMode === "admin") {
       return "Your current job types: " + cfgQ.duties.map(function (d) { return escapeHtml(d); }).join(", ") + ". Add more with \"add job type X\", or from Schedule setup on the Schedule tab.";
