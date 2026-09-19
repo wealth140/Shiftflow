@@ -2329,7 +2329,7 @@
     $("#adminAuthTitle").textContent = isReset ? "Set a new password" : (isSignup ? "Create your admin account" : "Sign in");
     $("#adminAuthSub").textContent = isReset
       ? "Choose a new password for your account."
-      : (isSignup ? "This becomes the account that manages your organization's schedule." : "Use your admin account to manage this organization's schedule.");
+      : (isSignup ? "This becomes a church staff account with permissions assigned by role." : "Use your church account to access your assigned role and ministry.");
     $("#adminAuthSubmitBtn").textContent = isReset ? "Update password" : (isSignup ? "Create account" : "Sign in");
     $("#adminAuthToggleBtn").hidden = isReset;
     $("#adminAuthToggleBtn").textContent = isSignup ? "Already have an account? Sign in" : "No account yet? Create one";
@@ -2454,6 +2454,10 @@
   // dashboard, already loaded with their own team's data.
   function checkAdminOrgAndEnter() {
     ShiftFlowAPI.getState().then(function (data) {
+      if (!data && window.ShiftFlowAuth && window.ShiftFlowAuth.isConfigured()) {
+        showToast("Your church account signed in, but the church database is not ready. Run the Supabase church roles migration.", true);
+        return;
+      }
       if (data) { hydrateFromBackend(data); renderEverything(); }
       if (data && data.orgType) {
         orgGate.classList.add("is-hidden");
