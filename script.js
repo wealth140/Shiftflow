@@ -1816,7 +1816,18 @@
     return { none: true };
   }
 
-  var HELP_ADMIN = "Here's what I can run for you:<br>" +
+  var HELP_ADMIN = "I can help you understand and operate the whole church workspace:<br>" +
+    "• <strong>Overview</strong> shows coverage, today's lineup, activity, swaps and attendance.<br>" +
+    "• <strong>Sunday Services</strong> manages ministry duties across each service.<br>" +
+    "• <strong>Team</strong> manages workers and ministry membership.<br>" +
+    "• <strong>Shift Swaps</strong> reviews coverage requests.<br>" +
+    "• <strong>Attendance</strong> tracks clock-ins and attendance history.<br>" +
+    "• <strong>Team Chat</strong> shares ministry and church information.<br>" +
+    "• <strong>Announcements</strong> publishes church updates.<br>" +
+    "• <strong>Reports</strong> summarizes service coverage.<br><br>" +
+    "You can also ask: <em>what can a Coordinator do?</em>, <em>how do I assign a Ministry Leader?</em>, <em>how does Sunday Services work?</em>, or type <em>help commands</em> for actions I can run.";
+
+  var HELP_COMMANDS_ADMIN = "Here are the actions I can run:<br>" +
     "• \"add worker Sam as Usher\"<br>" +
     "• \"remove worker Sam\"<br>" +
     "• \"assign Sam to Kitchen on Monday\" (or \"...for First Service\")<br>" +
@@ -1832,14 +1843,17 @@
     "• \"announce: Title — message\"<br>" +
     "• \"who's on shift\" / \"open shifts\" / \"pending swaps\"";
 
-  var HELP_WORKER = "Here's what I can run for you:<br>" +
-    "• \"clock me in\" / \"clock me out\"<br>" +
-    "• \"request a swap\"<br>" +
-    "• \"my shifts\" / \"my role\"";
+  var HELP_WORKER = "Welcome. I can help you with your part of the church workspace:<br>" +
+    "• <strong>My Shifts</strong> shows your Sunday assignments.<br>" +
+    "• <strong>Clock in/out</strong> records your attendance.<br>" +
+    "• <strong>Request Swap</strong> asks for coverage.<br>" +
+    "• <strong>Team Chat</strong> and <strong>Announcements</strong> keep you informed.<br><br>" +
+    "Ask me about <em>my shifts</em>, <em>my role</em>, or say <em>clock me in</em>.";
 
   // --- Admin-scoped commands ---
   function tryAdminCommand(raw, lower) {
-    if (/^help$|what can you do|what commands/.test(lower)) return HELP_ADMIN;
+    if (/^help$|what can you do|how can you help|explain the app|show me around/.test(lower)) return HELP_ADMIN;
+    if (/help commands|commands|what actions can you run/.test(lower)) return HELP_COMMANDS_ADMIN;
 
     // These are checked before the generic add/remove-worker commands
     // below, since phrasings like "remove job type X" would otherwise get
@@ -2049,7 +2063,8 @@
 
   // --- Worker-scoped commands ---
   function tryWorkerCommand(raw, lower) {
-    if (/^help$|what can you do|what commands/.test(lower)) return HELP_WORKER;
+    if (/^help$|what can you do|how can you help|explain the app|show me around/.test(lower)) return HELP_WORKER;
+    if (/help commands|commands|what actions can you run/.test(lower)) return "I can run: <em>clock me in</em>, <em>clock me out</em>, <em>my shifts</em>, <em>my role</em>, and <em>request a swap</em>.";
 
     if (/clock (me )?in/.test(lower)) {
       if (workerClockedIn) return "You're already clocked in.";
@@ -2087,15 +2102,20 @@
     var raw = question.trim();
     var lower = raw.toLowerCase();
 
+    // Handle natural greetings before routing the remaining request. This
+    // lets "hi, how do I manage ministries?" feel conversational without
+    // weakening the existing action parser.
+    var greetingWithQuestion = lower.match(/^(hi|hello|hey|hiya|howdy|greetings|morning|afternoon|evening|good\s+morning|good\s+afternoon|good\s+evening)[!,.\s]+(.+)$/i);
+    if (greetingWithQuestion) {
+      return "Hello" + (accessMode === "worker" && currentWorker ? " " + currentWorker.name.split(" ")[0] : "") + "! " + assistantHandle(greetingWithQuestion[2]);
+    }
+
     // A little small talk before falling through to commands — answering
     // "hi" with "I didn't catch a command there" is exactly the kind of
     // thing that makes an assistant feel unhelpful even when the actual
     // commands underneath it work fine.
-    if (/^(hi|hello|hey|yo|sup)[!.\s]*$/.test(lower)) {
-      return accessMode === "worker" ? "Hey" + (currentWorker ? " " + currentWorker.name.split(" ")[0] : "") + "! Ask me about your shifts, or say \"clock me in\"." : "Hey! Ask me to add a worker, check who's on shift, or type \"help\" for the full list.";
-    }
-    if (/^(good\s?morning|good\s?afternoon|good\s?evening)[!.\s]*$/.test(lower)) {
-      return "Right back at you. What do you need?";
+    if (/^(hi|hello|hey|yo|sup|hiya|howdy|greetings|morning|afternoon|evening|good\s+morning|good\s+afternoon|good\s+evening)[!.,\s]*$/.test(lower)) {
+      return accessMode === "worker" ? "Hello" + (currentWorker ? " " + currentWorker.name.split(" ")[0] : "") + "! Ask me about your shifts, or type \"help\" to see what I can do." : "Hello! I can explain every part of the church workspace, answer questions, or run approved actions. Type \"help\" to get started.";
     }
     if (/\b(thanks|thank you|thx|cheers|appreciate it)\b/.test(lower)) {
       return "Anytime.";
@@ -2140,6 +2160,35 @@
   function tryInformationalAnswer(lower) {
     var cfgQ = orgConfig();
 
+    if (/pastor|coordinator|ministry leader|worker|permission|role|who can do what/.test(lower)) {
+      return "Onixora has four roles: <strong>Pastor</strong> provides church-wide oversight and reviews reports; <strong>Coordinator</strong> runs daily church operations, ministries, schedules, attendance and announcements; <strong>Ministry Leader</strong> manages workers and Sunday rotation inside one assigned ministry; <strong>Worker</strong> sees personal assignments, attendance, swaps and permitted ministry information.";
+    }
+    if (/ministr(y|ies)|department|leader|assign.*leader|manage.*team/.test(lower) && accessMode !== "worker") {
+      return "Ministries are departments such as Media, Choir or Ushering. A Pastor or Coordinator creates a ministry from <strong>Team → Ministries and leaders</strong>, then assigns a Supabase account as its Ministry Leader. That leader can add workers, assign duties and manage the ministry's Sunday rotation without seeing private data from another ministry.";
+    }
+    if (/sunday service|sunday schedule|service rotation|schedule work|schedule set/.test(lower)) {
+      return "The <strong>Sunday Services</strong> page uses duties as rows and services as columns. Coordinators can manage church-wide coverage; Ministry Leaders manage their ministry's assignments. Use Schedule setup to rename services or duties, then choose a worker in each cell.";
+    }
+    if (/attendance|clock in|clock out/.test(lower)) {
+      return accessMode === "worker"
+        ? "Open your worker view and use <strong>Clock in</strong> or <strong>Clock out</strong>. Your attendance is recorded for you and visible only through authorized church operations."
+        : "The <strong>Attendance</strong> page records clock-ins and clock-outs. Workers record themselves; Coordinators monitor church-wide attendance, while Ministry Leaders view attendance for their ministry.";
+    }
+    if (/report|analytics|coverage summary/.test(lower)) {
+      return "The <strong>Reports</strong> page summarizes service coverage, assignments, no-shows and attendance-related operational signals. Use it for church-wide review and planning.";
+    }
+    if (/chat|message|communicat|announcement|notice/.test(lower)) {
+      return "Use <strong>Team Chat</strong> for conversation and <strong>Announcements</strong> for important updates. Pastors and Coordinators can publish church-wide announcements; workers can read permitted information and use authorized chat channels.";
+    }
+    if (/swap|cover|replacement/.test(lower)) {
+      return accessMode === "worker"
+        ? "Open <strong>Request Swap</strong>, choose one of your assignments, and send a coverage request. Authorized church operations can review and resolve it."
+        : "Workers request coverage from their own worker view. Coordinators and authorized Ministry Leaders review pending requests in <strong>Shift Swaps</strong>.";
+    }
+    if (/add worker|invite worker|join team/.test(lower) && accessMode !== "worker") {
+      return "Open <strong>Team</strong> and choose <strong>Add worker</strong>. Select the worker's ministry and duty. Ministry Leaders can add workers only to their own ministry; Coordinators can manage all ministries.";
+    }
+
     if (/what (kind of |type of )?org|what mode|how (does|is) (the )?schedul(e|ing) work|structure/.test(lower)) {
       return cfgQ.mode === "church"
         ? "You're set up as a Church: ministry duties (" + cfgQ.duties.slice(0, 3).join(", ") + (cfgQ.duties.length > 3 ? "…" : "") + ") as rows, services (" + cfgQ.services.join(", ") + ") as columns. Change it anytime from \"Switch organization type\" in the sidebar."
@@ -2180,7 +2229,7 @@
     if (lower.indexOf("team") !== -1 || lower.indexOf("worker") !== -1) {
       return team.length === 0 ? "Your roster is empty — add your first worker from the Team tab." : ("You have " + team.length + " people on the roster.");
     }
-    if (/what can (this app|swiftflow|you) do|what (is|does) (this|swiftflow)/.test(lower)) {
+    if (/what can (this app|onixora|shiftflow|you) do|what (is|does) (this|onixora|shiftflow)/.test(lower)) {
       return accessMode === "worker"
         ? "This is where you check your shifts, clock in and out, request coverage swaps, and keep up with team chat and announcements. Ask me to do any of that, or type \"help\" for exact phrasings."
         : "Onixora runs your schedule end to end: add workers, build the schedule (by hand or with auto-assign), handle shift swaps, track attendance, and keep everyone in the loop with chat and announcements. Type \"help\" for commands I can run directly.";
