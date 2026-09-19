@@ -22,7 +22,9 @@ window.ShiftFlowAPI = (function () {
 
   var BASE = window.SHIFTFLOW_API_URL || "/api";
   var available = null; // null = unknown, true/false once checked
-  var TIMEOUT_MS = 2500;
+  // Vercel cold starts and Supabase's first request can exceed a couple of
+  // seconds. A short timeout here made a transient delay look permanent.
+  var TIMEOUT_MS = 10000;
   var inviteToken = null; // set once via setInviteToken() when a worker arrives via their personal ?invite= link
 
   function withTimeout(promise, ms) {
@@ -37,17 +39,17 @@ window.ShiftFlowAPI = (function () {
   }
 
   function checkBackend() {
-    if (available !== null) return Promise.resolve(available);
+    if (available === true) return Promise.resolve(true);
     return withTimeout(
       // Any real HTTP response (even a 401 — the multi-tenant backend
       // requires auth on this same route) proves a backend is reachable.
       // Only a network-level failure means "there's genuinely no backend".
       fetch(BASE + "/state", { method: "GET" })
         .then(function () { available = true; return true; })
-        .catch(function () { available = false; return false; }),
+        .catch(function () { return false; }),
       TIMEOUT_MS
     ).then(function (result) {
-      if (result === null) { available = false; return false; } // timed out
+      if (result === null) { return false; } // timed out; retry next time
       return result;
     });
   }

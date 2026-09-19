@@ -217,6 +217,10 @@ svg{ width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 
   font-size: 0.9rem;
   color: var(--brand-text);
 }
+.password-field{ position: relative; display: block; }
+.password-field input{ width: 100%; padding-right: 64px; }
+.password-toggle{ position: absolute; top: 50%; right: 10px; transform: translateY(-50%); color: var(--teal); font-size: 0.74rem; font-weight: 700; padding: 5px; }
+.password-toggle:hover{ color: var(--brand-text); }
 .worker-login-form select:focus, .worker-login-form input:focus{ outline: none; border-color: var(--teal); }
 .worker-login-form .field-hint{ color: var(--brand-text-dim); }
 .worker-login-actions{ display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }

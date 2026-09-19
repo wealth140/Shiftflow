@@ -116,7 +116,10 @@
         <input type="email" id="adminAuthEmail" placeholder="you@example.com" autocomplete="username">
       </label>
       <label>Password
-        <input type="password" id="adminAuthPassword" placeholder="At least 6 characters" autocomplete="current-password">
+        <span class="password-field">
+          <input type="password" id="adminAuthPassword" placeholder="At least 6 characters" autocomplete="current-password">
+          <button type="button" class="password-toggle" id="adminAuthPasswordToggle" aria-label="Show password" aria-pressed="false">Show</button>
+        </span>
       </label>
       <p class="field-hint" id="adminAuthMsg"></p>
       <div class="worker-login-actions">

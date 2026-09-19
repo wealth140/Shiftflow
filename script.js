@@ -2323,6 +2323,17 @@
 
   /* --- Admin sign-in (only active when Supabase auth is configured) --- */
   var adminAuthMode = "signin"; // "signin" | "signup" | "reset"
+  var adminPasswordToggle = $("#adminAuthPasswordToggle");
+  if (adminPasswordToggle) {
+    adminPasswordToggle.addEventListener("click", function () {
+      var passwordInput = $("#adminAuthPassword");
+      var showing = passwordInput.type === "text";
+      passwordInput.type = showing ? "password" : "text";
+      adminPasswordToggle.textContent = showing ? "Show" : "Hide";
+      adminPasswordToggle.setAttribute("aria-label", showing ? "Show password" : "Hide password");
+      adminPasswordToggle.setAttribute("aria-pressed", String(!showing));
+    });
+  }
   function renderAdminAuthMode() {
     var isSignup = adminAuthMode === "signup";
     var isReset = adminAuthMode === "reset";
@@ -2379,6 +2390,8 @@
       msg.textContent = "Sending…";
       window.ShiftFlowAuth.resetPasswordForEmail(email).then(function (result) {
         msg.textContent = result.error || "Check your email for a reset link.";
+      }).catch(function () {
+        msg.textContent = "We couldn't reach the email service. Check your connection and try again.";
       });
     });
   }
@@ -2392,6 +2405,8 @@
         if (result.error) { msg.textContent = result.error; return; }
         showToast("Password updated.");
         checkAdminOrgAndEnter();
+      }).catch(function () {
+        msg.textContent = "We couldn't reach the password service. Check your connection and try again.";
       });
       return;
     }
@@ -2445,6 +2460,8 @@
       var wasSignup = adminAuthMode === "signup";
       checkAdminOrgAndEnter();
       showToast(wasSignup ? "Account created — welcome to Onixora." : "Signed in.");
+    }).catch(function () {
+      msg.textContent = "We couldn't reach the sign-in service. Check your connection and try again.";
     });
   }
 
