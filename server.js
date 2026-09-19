@@ -233,6 +233,11 @@ async function handleApi(req, res, pathname) {
     var delId = Number(parts[2]);
     data.team = data.team.filter((w) => w.id !== delId);
     delete data.duties[delId];
+    Object.keys(data.churchAssignments || {}).forEach((duty) => {
+      Object.keys(data.churchAssignments[duty] || {}).forEach((service) => {
+        if (String(data.churchAssignments[duty][service]) === String(delId)) data.churchAssignments[duty][service] = "";
+      });
+    });
     writeData(data);
     return sendJson(res, 200, { removed: delId });
   }
@@ -288,20 +293,39 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, swap);
   }
 
-  if (resource === "attendance" && req.method === "POST") {
+  if (resource === "attendance" && !parts[2] && req.method === "POST") {
     var aBody = await readBody(req);
     data.attendance.unshift(aBody);
     writeData(data);
     return sendJson(res, 200, aBody);
   }
 
-  if (resource === "chat" && req.method === "POST") {
+  if (resource === "attendance" && parts[2] && req.method === "POST") {
+    var updateAttendanceBody = await readBody(req);
+    var attendanceId = String(parts[2]);
+    var attendanceEntry = (data.attendance || []).find((entry) => String(entry.id || "") === attendanceId);
+    if (!attendanceEntry) return sendJson(res, 404, { error: "attendance entry not found" });
+    Object.assign(attendanceEntry, updateAttendanceBody, { id: attendanceEntry.id });
+    writeData(data);
+    return sendJson(res, 200, attendanceEntry);
+  }
+
+  if (resource === "chat" && !parts[3] && req.method === "POST") {
     var channel = parts[2];
     var cBody = await readBody(req);
     if (!data.chat[channel]) data.chat[channel] = [];
     data.chat[channel].push(cBody);
     writeData(data);
     return sendJson(res, 200, cBody);
+  }
+
+  if (resource === "chat" && parts[3] === "delete" && req.method === "POST") {
+    var deleteChannel = parts[2];
+    var deleteBody = await readBody(req);
+    var channelMessages = data.chat[deleteChannel] || [];
+    data.chat[deleteChannel] = channelMessages.filter((message) => String(message.id) !== String(deleteBody.id));
+    writeData(data);
+    return sendJson(res, 200, { removed: deleteBody.id });
   }
 
   sendJson(res, 404, { error: "unknown endpoint" });

@@ -196,7 +196,9 @@
     state.scheduleDays = [];
     state.jobTypes = [];
     orgGate.classList.add("is-hidden");
-    ShiftFlowAPI.setOrg(key).then(function () {
+    ShiftFlowAPI.setOrg(key).then(function (result) {
+      if (result && result.role) state.currentRole = result.role;
+      refreshOrgDependentUI();
       // Multi-tenant only: the join-link button needs the org's id, which
       // only exists once the server has actually created the row — pick
       // it up now rather than waiting for the next full page load.
@@ -1298,7 +1300,7 @@
           opts.timeEl.textContent = formatClock(opts.getSeconds());
         }, 1000);
         opts.setInterval(interval);
-        attendanceLog.unshift({ name: opts.personName(), role: opts.personRole(), inT: timeNow(), outT: "—", status: "active" });
+        attendanceLog.unshift({ id: genMsgId(), name: opts.personName(), role: opts.personRole(), inT: timeNow(), outT: "—", status: "active" });
         renderAttendance();
         updateStatCards();
         ShiftFlowAPI.logAttendance(attendanceLog[0]).catch(function () {});
@@ -1313,7 +1315,7 @@
         if (entry) { entry.outT = timeNow(); entry.status = "on-time"; }
         renderAttendance();
         updateStatCards();
-        if (entry) ShiftFlowAPI.logAttendance(entry).catch(function () {});
+        if (entry && entry.id) ShiftFlowAPI.updateAttendance(entry.id, entry).catch(function () {});
         showToast("Clocked out at " + timeNow() + ".");
         pushActivity("<strong>" + escapeHtml(opts.personName()) + "</strong> clocked out at " + timeNow() + ".");
       }
@@ -2568,6 +2570,16 @@
         opt.value = d; opt.textContent = d;
         roleSelect.appendChild(opt);
       });
+      var ministrySelect = $("#joinMinistry");
+      if (ministrySelect) {
+        ministrySelect.innerHTML = "";
+        (info.ministries || []).forEach(function (ministry) {
+          var ministryOption = document.createElement("option");
+          ministryOption.value = ministry.id;
+          ministryOption.textContent = ministry.name;
+          ministrySelect.appendChild(ministryOption);
+        });
+      }
       $("#joinGateEyebrow").textContent = "Join " + cfg.label;
       $("#joinName").focus();
     });
@@ -2575,13 +2587,15 @@
   function submitJoin(orgId) {
     var name = $("#joinName").value.trim();
     var role = $("#joinRole").value;
+    var ministryId = $("#joinMinistry").value;
     var email = $("#joinEmail").value.trim();
     var msg = $("#joinMsg");
     if (!name) { msg.textContent = "Enter your name first."; return; }
     if (!role) { msg.textContent = "Pick a role first."; return; }
+    if (!ministryId) { msg.textContent = "Pick a ministry first."; return; }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.textContent = "That email doesn't look right."; return; }
     msg.textContent = "Joining…";
-    ShiftFlowAPI.joinOrg({ orgId: orgId, name: name, role: role, email: email }).then(function (result) {
+    ShiftFlowAPI.joinOrg({ orgId: orgId, name: name, role: role, ministryId: ministryId, email: email }).then(function (result) {
       if (!result || !result.worker) { msg.textContent = "Couldn't join right now — try again in a moment."; return; }
       ShiftFlowAPI.setInviteToken(result.worker.token);
       saveInviteToken(result.worker.token);

@@ -137,6 +137,7 @@ window.ShiftFlowAPI = (function () {
     resolveSwap: function (id, status) { return post("/swaps/" + id, { status: status }); },
     requestSwap: function (swap) { return post("/swaps", swap); },
     logAttendance: function (entry) { return post("/attendance", entry); },
+    updateAttendance: function (id, entry) { return post("/attendance/" + encodeURIComponent(id), entry); },
     postChatMessage: function (channel, message) { return post("/chat/" + channel, message); },
     deleteChatMessage: function (channel, id) { return post("/chat/" + channel + "/delete", { id: id }); },
     getChatMediaUploadUrl: function (filename) { return post("/chat-media-upload-url", { filename: filename }); },

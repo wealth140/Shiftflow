@@ -301,7 +301,8 @@ module.exports = async function handler(req, res) {
         joinOrg = (candidates || []).find((o) => shortJoinCode(o.id, o.data.orgName).replace(/-/g, "") === joinCode) || null;
       }
       if (!joinOrg) return sendJson(404, { error: "That code or link isn't valid — ask your admin for a current one." });
-      return sendJson(200, { orgId: joinOrg.id, orgType: joinOrg.data.orgType, orgName: joinOrg.data.orgName, jobTypes: joinOrg.data.jobTypes });
+      const { data: joinMinistries } = await supabase.from("ministries").select("id, name").eq("org_id", joinOrg.id).order("name");
+      return sendJson(200, { orgId: joinOrg.id, orgType: "church", orgName: joinOrg.data.orgName, jobTypes: joinOrg.data.jobTypes, ministries: joinMinistries || [] });
     }
 
     // Self-serve join — no admin action needed first. Anyone with the org's
@@ -317,12 +318,16 @@ module.exports = async function handler(req, res) {
       const { data: targetOrg, error: targetErr } = await supabase.from("organizations").select("*").eq("id", targetOrgId).maybeSingle();
       if (targetErr || !targetOrg) return sendJson(404, { error: "That join link isn't valid — ask your admin for a current one." });
       var joinData = targetOrg.data;
+      var joinMinistryId = String(joinBody.ministryId || "").trim();
+      const { data: joinMinistry } = await supabase.from("ministries").select("id").eq("id", joinMinistryId).eq("org_id", targetOrgId).maybeSingle();
+      if (!joinMinistry) return sendJson(400, { error: "Choose a valid ministry." });
       var joinNextId = joinData.team.reduce((max, w) => Math.max(max, w.id), 0) + 1;
       var joinTok = crypto.randomBytes(20).toString("hex");
       var joinedWorker = {
         id: joinNextId,
         name: String(joinBody.name || "").slice(0, 80),
         role: String(joinBody.role || "").slice(0, 60),
+        ministryId: joinMinistryId,
         on: false,
         email: String(joinBody.email || "").slice(0, 120),
         token: joinTok,
@@ -333,6 +338,7 @@ module.exports = async function handler(req, res) {
       joinData.team.unshift(joinedWorker);
       await saveOrg(targetOrgId, joinData);
       await supabase.from("worker_invite_tokens").insert({ token: joinTok, org_id: targetOrgId, worker_id: joinNextId });
+      await supabase.from("worker_ministry_memberships").upsert({ org_id: targetOrgId, worker_id: joinNextId, ministry_id: joinMinistryId });
       return sendJson(200, { worker: joinedWorker, orgType: joinData.orgType });
     }
 
@@ -522,6 +528,11 @@ module.exports = async function handler(req, res) {
       if (!canManageMinistry(await getWorkerMinistry(orgId, delId))) return sendJson(403, { error: "You can only manage workers in your ministry." });
       data.team = data.team.filter((w) => w.id !== delId);
       delete data.duties[delId];
+      Object.keys(data.churchAssignments || {}).forEach(function (duty) {
+        Object.keys(data.churchAssignments[duty] || {}).forEach(function (service) {
+          if (String(data.churchAssignments[duty][service]) === String(delId)) data.churchAssignments[duty][service] = "";
+        });
+      });
       await saveOrg(orgId, data);
       await supabase.from("worker_invite_tokens").delete().eq("org_id", orgId).eq("worker_id", delId);
       await supabase.from("worker_ministry_memberships").delete().eq("org_id", orgId).eq("worker_id", delId);
@@ -561,6 +572,11 @@ module.exports = async function handler(req, res) {
     // Workers create their own swap requests; only admins resolve them.
     if (resource === "swaps" && parts.length === 2 && req.method === "POST") {
       var newSwapBody = await readBody(req);
+      if (!isAdminCaller) {
+        var callerWorker = data.team.find(function (worker) { return String(worker.id) === String(callerWorkerId); });
+        if (!callerWorker) return sendJson(403, { error: "Worker identity not found." });
+        newSwapBody.from = callerWorker.name;
+      }
       var nextSwapId = data.swaps.reduce((max, s) => Math.max(max, s.id || 0), 0) + 1;
       var newSwap = {
         id: nextSwapId,
@@ -588,7 +604,22 @@ module.exports = async function handler(req, res) {
 
     // Workers clock themselves in/out; nothing admin-only about it.
     if (resource === "attendance" && req.method === "POST") {
+      if (parts[2]) {
+        var updateAttendanceBody = await readBody(req);
+        var attendanceId = String(parts[2]);
+        var attendanceEntry = (data.attendance || []).find(function (entry) { return String(entry.id || "") === attendanceId; });
+        if (!attendanceEntry) return sendJson(404, { error: "attendance entry not found" });
+        Object.assign(attendanceEntry, updateAttendanceBody, { id: attendanceEntry.id });
+        await saveOrg(orgId, data);
+        return sendJson(200, attendanceEntry);
+      }
       var aBody = await readBody(req);
+      if (!isAdminCaller) {
+        var attendanceWorker = data.team.find(function (worker) { return String(worker.id) === String(callerWorkerId); });
+        if (!attendanceWorker) return sendJson(403, { error: "Worker identity not found." });
+        aBody.name = attendanceWorker.name;
+        aBody.role = attendanceWorker.role;
+      }
       data.attendance.unshift(aBody);
       await saveOrg(orgId, data);
       return sendJson(200, aBody);
