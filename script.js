@@ -2454,7 +2454,20 @@
         // reads as "create account isn't working at all."
         adminAuthMode = "signin";
         renderAdminAuthMode();
-        msg.textContent = "Account created — check your email to confirm it, then sign in.";
+        msg.innerHTML = "";
+        msg.appendChild(document.createTextNode("Account created. Check your inbox or spam folder, then "));
+        var signupResendBtn = el("button", "link-btn-inline", "resend the confirmation email");
+        signupResendBtn.type = "button";
+        signupResendBtn.addEventListener("click", function () {
+          msg.textContent = "Sending confirmation email…";
+          window.ShiftFlowAuth.resendConfirmation(email).then(function (resendResult) {
+            msg.textContent = resendResult.error || "Confirmation email sent. Check your inbox and spam folder.";
+          }).catch(function () {
+            msg.textContent = "We couldn't reach the email service. Check your connection and try again.";
+          });
+        });
+        msg.appendChild(signupResendBtn);
+        msg.appendChild(document.createTextNode("."));
         return;
       }
       var wasSignup = adminAuthMode === "signup";
